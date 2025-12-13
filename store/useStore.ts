@@ -15,6 +15,16 @@ import {
 import { MindMapState, MindMapNode, ViewType, Project, ProjectType, ChatMessage, Friend, DirectMessage, Group, Theme, ViewState } from '../types';
 import { GoogleGenAI, FunctionDeclaration, Type } from "@google/genai";
 
+// --- VISUAL CONFIG: Straight Gray Lines ---
+const DEFAULT_EDGE_STYLE = { stroke: '#a1a1aa', strokeWidth: 1 }; // Zinc-400
+
+// --- STRICT PALETTE (3 Core Colors) ---
+const STRICT_PALETTE = [
+    '#6366f1', // Indigo (Primary/Root)
+    '#10b981', // Emerald (Secondary/Category)
+    '#f59e0b', // Amber (Tertiary/Leaf)
+];
+
 // --- Mock Data ---
 
 const initialSnippets: Project[] = [
@@ -38,7 +48,141 @@ const initialSnippets: Project[] = [
     nodes: [], edges: [], chatHistory: [], unsavedChanges: false,
     viewState: { x: 0, y: 0, zoom: 1, isMiniMapOpen: true }
   },
+  {
+    id: 'snip-3', 
+    type: 'note', 
+    title: 'Effective Meeting Rules', 
+    content: '**Agenda is mandatory**\n\n1. No phones.\n2. Clear agenda.\n3. Action items at end.\n4. Max 30 mins.',
+    updatedAt: '2023-11-25', 
+    databaseTags: ['Inbox', 'Work', 'Productivity'], 
+    nodes: [], edges: [], chatHistory: [], unsavedChanges: false,
+    viewState: { x: 0, y: 0, zoom: 1, isMiniMapOpen: true }
+  },
+  { 
+    id: 'snip-4', 
+    type: 'note', 
+    title: 'TypeScript Generics', 
+    content: '```typescript\nfunction identity<T>(arg: T): T {\n  return arg;\n}\n```\nUseful for reusable components.',
+    updatedAt: '2023-12-05', 
+    databaseTags: ['Inbox', 'Coding', 'TypeScript'], 
+    nodes: [], edges: [], chatHistory: [], unsavedChanges: false,
+    viewState: { x: 0, y: 0, zoom: 1, isMiniMapOpen: true }
+  },
+  { 
+    id: 'snip-5', 
+    type: 'resource', 
+    title: 'Vercel AI SDK', 
+    url: 'https://sdk.vercel.ai/docs', 
+    summary: 'The AI SDK is a library for building AI-powered applications with React, Svelte, Vue, and Solid.',
+    updatedAt: '2023-12-10', 
+    databaseTags: ['Dev', 'AI', 'React'], 
+    nodes: [], edges: [], chatHistory: [], unsavedChanges: false,
+    viewState: { x: 0, y: 0, zoom: 1, isMiniMapOpen: true }
+  }
 ];
+
+// --- Demo Graph 1: Frontend Stack ---
+const demoGraphNodes: MindMapNode[] = [
+    { id: 'root-demo', type: 'mindMapNode', position: { x: 0, y: 0 }, data: { label: 'Frontend Tech Stack', importance: 3, nodeType: 'root', source: 'Work', color: STRICT_PALETTE[0] } },
+    
+    // Branch 1: React
+    { id: 'cat-react', type: 'mindMapNode', position: { x: -250, y: 150 }, data: { label: 'React Ecosystem', importance: 2, nodeType: 'category', source: 'React', color: STRICT_PALETTE[1] } },
+    { id: 'leaf-next', type: 'mindMapNode', position: { x: -350, y: 300 }, data: { label: 'Next.js 14', importance: 1, nodeType: 'petal', source: 'React', color: STRICT_PALETTE[2] } },
+    { id: 'leaf-rsc', type: 'mindMapNode', position: { x: -200, y: 350 }, data: { label: 'Server Components', importance: 1, nodeType: 'petal', source: 'React', color: STRICT_PALETTE[2] } },
+
+    // Branch 2: State
+    { id: 'cat-state', type: 'mindMapNode', position: { x: 250, y: 150 }, data: { label: 'State Management', importance: 2, nodeType: 'category', source: 'Coding', color: STRICT_PALETTE[1] } },
+    { id: 'leaf-zustand', type: 'mindMapNode', position: { x: 200, y: 300 }, data: { label: 'Zustand', importance: 1, nodeType: 'petal', source: 'Coding', color: STRICT_PALETTE[2] } },
+    { id: 'leaf-query', type: 'mindMapNode', position: { x: 350, y: 300 }, data: { label: 'TanStack Query', importance: 1, nodeType: 'petal', source: 'Coding', color: STRICT_PALETTE[2] } },
+
+    // Branch 3: Styling
+    { id: 'cat-style', type: 'mindMapNode', position: { x: 0, y: -200 }, data: { label: 'Styling / UI', importance: 2, nodeType: 'category', source: 'Design', color: STRICT_PALETTE[1] } },
+    { id: 'leaf-tailwind', type: 'mindMapNode', position: { x: -100, y: -350 }, data: { label: 'Tailwind CSS', importance: 1, nodeType: 'petal', source: 'Design', color: STRICT_PALETTE[2] } },
+    { id: 'leaf-framer', type: 'mindMapNode', position: { x: 100, y: -350 }, data: { label: 'Framer Motion', importance: 1, nodeType: 'petal', source: 'Design', color: STRICT_PALETTE[2] } },
+];
+
+const demoGraphEdges: Edge[] = [
+    { id: 'e-r-1', source: 'root-demo', target: 'cat-react', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'e-r-2', source: 'root-demo', target: 'cat-state', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'e-r-3', source: 'root-demo', target: 'cat-style', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    
+    { id: 'e-c1-1', source: 'cat-react', target: 'leaf-next', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'e-c1-2', source: 'cat-react', target: 'leaf-rsc', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    
+    { id: 'e-c2-1', source: 'cat-state', target: 'leaf-zustand', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'e-c2-2', source: 'cat-state', target: 'leaf-query', type: 'straight', style: DEFAULT_EDGE_STYLE },
+
+    { id: 'e-c3-1', source: 'cat-style', target: 'leaf-tailwind', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'e-c3-2', source: 'cat-style', target: 'leaf-framer', type: 'straight', style: DEFAULT_EDGE_STYLE },
+];
+
+// --- Demo Graph 2: Complex Architecture (New) ---
+const archNodes: MindMapNode[] = [
+    // Root
+    { id: 'arch-root', type: 'mindMapNode', position: { x: 0, y: 0 }, data: { label: 'Enterprise SaaS Architecture', importance: 3, nodeType: 'root', source: 'Architecture', color: STRICT_PALETTE[0] } },
+
+    // Branch A: Client Side (Top Right)
+    { id: 'arch-client', type: 'mindMapNode', position: { x: 300, y: -200 }, data: { label: 'Client Layer', importance: 2, nodeType: 'category', source: 'Frontend', color: STRICT_PALETTE[1] } },
+    { id: 'arch-pwa', type: 'mindMapNode', position: { x: 450, y: -300 }, data: { label: 'PWA / Mobile', importance: 1, nodeType: 'petal', source: 'Frontend', color: STRICT_PALETTE[2] } },
+    { id: 'arch-state', type: 'mindMapNode', position: { x: 500, y: -150 }, data: { label: 'Global State', importance: 1, nodeType: 'petal', source: 'Frontend', color: STRICT_PALETTE[2] } },
+    { id: 'arch-analytics', type: 'mindMapNode', position: { x: 350, y: -400 }, data: { label: 'Analytics', importance: 1, nodeType: 'petal', source: 'Frontend', color: STRICT_PALETTE[2] } },
+
+    // Branch B: API Gateway (Top Left)
+    { id: 'arch-api', type: 'mindMapNode', position: { x: -300, y: -200 }, data: { label: 'API Gateway', importance: 2, nodeType: 'category', source: 'Backend', color: STRICT_PALETTE[1] } },
+    { id: 'arch-graphql', type: 'mindMapNode', position: { x: -450, y: -350 }, data: { label: 'GraphQL Fed.', importance: 1, nodeType: 'petal', source: 'Backend', color: STRICT_PALETTE[2] } },
+    { id: 'arch-auth', type: 'mindMapNode', position: { x: -200, y: -400 }, data: { label: 'Auth Service', importance: 1, nodeType: 'petal', source: 'Backend', color: STRICT_PALETTE[2] } },
+    { id: 'arch-rate', type: 'mindMapNode', position: { x: -500, y: -150 }, data: { label: 'Rate Limiter', importance: 1, nodeType: 'petal', source: 'Backend', color: STRICT_PALETTE[2] } },
+
+    // Branch C: Data Persistence (Bottom)
+    { id: 'arch-data', type: 'mindMapNode', position: { x: 0, y: 350 }, data: { label: 'Data Persistence', importance: 2, nodeType: 'category', source: 'Database', color: STRICT_PALETTE[1] } },
+    { id: 'arch-postgres', type: 'mindMapNode', position: { x: -150, y: 500 }, data: { label: 'Primary DB (PG)', importance: 1, nodeType: 'petal', source: 'Database', color: STRICT_PALETTE[2] } },
+    { id: 'arch-redis', type: 'mindMapNode', position: { x: 150, y: 500 }, data: { label: 'Redis Cache', importance: 1, nodeType: 'petal', source: 'Database', color: STRICT_PALETTE[2] } },
+    { id: 'arch-vector', type: 'mindMapNode', position: { x: 0, y: 600 }, data: { label: 'Vector Store', importance: 1, nodeType: 'petal', source: 'Database', color: STRICT_PALETTE[2] } },
+
+    // Branch D: Async Workers (Left)
+    { id: 'arch-workers', type: 'mindMapNode', position: { x: -400, y: 150 }, data: { label: 'Async Workers', importance: 2, nodeType: 'category', source: 'DevOps', color: STRICT_PALETTE[1] } },
+    { id: 'arch-queues', type: 'mindMapNode', position: { x: -550, y: 250 }, data: { label: 'Message Queues', importance: 1, nodeType: 'petal', source: 'DevOps', color: STRICT_PALETTE[2] } },
+    { id: 'arch-cron', type: 'mindMapNode', position: { x: -500, y: 50 }, data: { label: 'Cron Jobs', importance: 1, nodeType: 'petal', source: 'DevOps', color: STRICT_PALETTE[2] } },
+
+    // Branch E: AI Services (Right)
+    { id: 'arch-ai', type: 'mindMapNode', position: { x: 400, y: 150 }, data: { label: 'AI Services', importance: 2, nodeType: 'category', source: 'AI', color: STRICT_PALETTE[1] } },
+    { id: 'arch-llm', type: 'mindMapNode', position: { x: 550, y: 100 }, data: { label: 'LLM Provider', importance: 1, nodeType: 'petal', source: 'AI', color: STRICT_PALETTE[2] } },
+    { id: 'arch-rag', type: 'mindMapNode', position: { x: 500, y: 300 }, data: { label: 'RAG Pipeline', importance: 1, nodeType: 'petal', source: 'AI', color: STRICT_PALETTE[2] } },
+];
+
+const archEdges: Edge[] = [
+    // Roots
+    { id: 'e-a-1', source: 'arch-root', target: 'arch-client', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'e-a-2', source: 'arch-root', target: 'arch-api', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'e-a-3', source: 'arch-root', target: 'arch-data', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'e-a-4', source: 'arch-root', target: 'arch-workers', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'e-a-5', source: 'arch-root', target: 'arch-ai', type: 'straight', style: DEFAULT_EDGE_STYLE },
+
+    // Leaves
+    { id: 'e-a-c1', source: 'arch-client', target: 'arch-pwa', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'e-a-c2', source: 'arch-client', target: 'arch-state', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'e-a-c3', source: 'arch-client', target: 'arch-analytics', type: 'straight', style: DEFAULT_EDGE_STYLE },
+
+    { id: 'e-a-ap1', source: 'arch-api', target: 'arch-graphql', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'e-a-ap2', source: 'arch-api', target: 'arch-auth', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'e-a-ap3', source: 'arch-api', target: 'arch-rate', type: 'straight', style: DEFAULT_EDGE_STYLE },
+
+    { id: 'e-a-d1', source: 'arch-data', target: 'arch-postgres', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'e-a-d2', source: 'arch-data', target: 'arch-redis', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'e-a-d3', source: 'arch-data', target: 'arch-vector', type: 'straight', style: DEFAULT_EDGE_STYLE },
+
+    { id: 'e-a-w1', source: 'arch-workers', target: 'arch-queues', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'e-a-w2', source: 'arch-workers', target: 'arch-cron', type: 'straight', style: DEFAULT_EDGE_STYLE },
+
+    { id: 'e-a-ai1', source: 'arch-ai', target: 'arch-llm', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'e-a-ai2', source: 'arch-ai', target: 'arch-rag', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    
+    // Cross Links (Complexity)
+    { id: 'e-x-1', source: 'arch-auth', target: 'arch-client', type: 'straight', style: { stroke: '#a1a1aa', strokeDasharray: '5,5' }, label: 'Token' },
+    { id: 'e-x-2', source: 'arch-vector', target: 'arch-rag', type: 'straight', style: { stroke: '#a1a1aa', strokeDasharray: '5,5' }, label: 'Retrieval' },
+    { id: 'e-x-3', source: 'arch-queues', target: 'arch-redis', type: 'straight', style: { stroke: '#a1a1aa', strokeDasharray: '5,5' } },
+];
+
 
 const initialProjects: Project[] = [
   {
@@ -48,18 +192,44 @@ const initialProjects: Project[] = [
     updatedAt: '2 hours ago',
     databaseTags: ['Personal', 'Graphs'],
     nodes: [
-      { id: 'root-1', type: 'mindMapNode', position: { x: 0, y: 0 }, data: { label: '2024 Goals', importance: 3, nodeType: 'root', source: 'Personal', color: '#6366f1' } }, // Indigo
-      { id: 'node-ex-1', type: 'mindMapNode', position: { x: 250, y: 100 }, data: { label: 'Product Launch', importance: 1, nodeType: 'petal', source: 'Personal', color: '#10b981' } }, // Emerald
-      { id: 'node-ex-2', type: 'mindMapNode', position: { x: -200, y: 150 }, data: { label: 'Team Hiring', importance: 1, nodeType: 'petal', source: 'Personal', color: '#f59e0b' } }  // Amber
+      { id: 'root-1', type: 'mindMapNode', position: { x: 0, y: 0 }, data: { label: '2024 Goals', importance: 3, nodeType: 'root', source: 'Personal', color: STRICT_PALETTE[0] } },
+      { id: 'node-ex-1', type: 'mindMapNode', position: { x: 250, y: 100 }, data: { label: 'Product Launch', importance: 1, nodeType: 'petal', source: 'Personal', color: STRICT_PALETTE[1] } },
+      { id: 'node-ex-2', type: 'mindMapNode', position: { x: -200, y: 150 }, data: { label: 'Team Hiring', importance: 1, nodeType: 'petal', source: 'Personal', color: STRICT_PALETTE[2] } }
     ],
     edges: [
-        { id: 'e1-2', source: 'root-1', target: 'node-ex-1', type: 'straight', style: { stroke: '#a1a1aa', strokeWidth: 1 } },
-        { id: 'e1-3', source: 'root-1', target: 'node-ex-2', type: 'straight', style: { stroke: '#a1a1aa', strokeWidth: 1 } }
+        { id: 'e1-2', source: 'root-1', target: 'node-ex-1', type: 'straight', style: DEFAULT_EDGE_STYLE },
+        { id: 'e1-3', source: 'root-1', target: 'node-ex-2', type: 'straight', style: DEFAULT_EDGE_STYLE }
     ],
     chatHistory: [],
     content: '',
     unsavedChanges: false,
     viewState: { x: 0, y: 0, zoom: 1, isMiniMapOpen: true }
+  },
+  {
+    id: 'proj-demo-graph',
+    type: 'graph',
+    title: 'Frontend Tech Stack (Work)',
+    updatedAt: '4 hours ago',
+    databaseTags: ['Work', 'React', 'Graphs'],
+    nodes: demoGraphNodes,
+    edges: demoGraphEdges,
+    chatHistory: [],
+    content: '',
+    unsavedChanges: false,
+    viewState: { x: 0, y: 0, zoom: 0.8, isMiniMapOpen: true }
+  },
+  {
+    id: 'proj-demo-arch',
+    type: 'graph',
+    title: 'Enterprise SaaS Architecture',
+    updatedAt: '1 hour ago',
+    databaseTags: ['Work', 'Architecture', 'DevOps'],
+    nodes: archNodes,
+    edges: archEdges,
+    chatHistory: [],
+    content: '',
+    unsavedChanges: false,
+    viewState: { x: 0, y: 0, zoom: 0.65, isMiniMapOpen: true }
   },
   {
     id: 'proj-2',
@@ -124,6 +294,7 @@ interface StoreState extends MindMapState {
     updateEdgeLabel: (edgeId: string, label: string) => void;
 }
 
+// ... existing code ... (The rest of the file remains unchanged, preserving cleanJsonOutput, tool declarations, AI client, and useStore implementation)
 const cleanJsonOutput = (text: string) => {
   let cleaned = text.trim();
   const firstOpen = cleaned.indexOf('{');
@@ -138,20 +309,6 @@ const cleanJsonOutput = (text: string) => {
   }
   return cleaned;
 };
-
-// --- VISUAL CONFIG: Straight Gray Lines ---
-const DEFAULT_EDGE_STYLE = { stroke: '#a1a1aa', strokeWidth: 1 }; // Zinc-400
-
-// --- STRICT PALETTE (3 Core Colors) ---
-// 1. Root (Center)
-// 2. Category (Level 1)
-// 3. Leaf (Level 2)
-// Extra colors only added if absolutely necessary by user later.
-const STRICT_PALETTE = [
-    '#6366f1', // Indigo (Primary/Root)
-    '#10b981', // Emerald (Secondary/Category)
-    '#f59e0b', // Amber (Tertiary/Leaf)
-];
 
 // --- TOOL DECLARATIONS FOR AGENT ---
 const addNodeTool: FunctionDeclaration = {
