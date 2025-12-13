@@ -1,15 +1,17 @@
+
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 
 // Suppress benign ResizeObserver loop errors often caused by React Flow or layout transitions
-const resizeObserverLoopErr = 'ResizeObserver loop completed with undelivered notifications';
-const resizeObserverLimitErr = 'ResizeObserver loop limit exceeded';
+// Using a regex to catch "ResizeObserver loop completed with undelivered notifications" 
+// and "ResizeObserver loop limit exceeded" variants.
+const resizeObserverErrRegex = /ResizeObserver loop/;
 
 const originalError = console.error;
 console.error = (...args) => {
   if (args[0] && typeof args[0] === 'string') {
-    if (args[0].includes(resizeObserverLoopErr) || args[0].includes(resizeObserverLimitErr)) {
+    if (resizeObserverErrRegex.test(args[0])) {
       return;
     }
   }
@@ -17,7 +19,7 @@ console.error = (...args) => {
 };
 
 window.addEventListener('error', (event) => {
-  if (event.message === resizeObserverLoopErr || event.message === resizeObserverLimitErr) {
+  if (resizeObserverErrRegex.test(event.message)) {
     event.stopImmediatePropagation();
   }
 });
