@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LinkVerse</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reactflow@11.10.1/dist/style.css" />
+    <!-- 引入 Inter 字体，提升 SaaS 质感 -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+            },
+            colors: {
+              zinc: {
+                950: '#09090b', // Custom deep dark for background
+              }
+            },
+            animation: {
+              'bounce-in': 'bounce-in 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) both',
+            },
+            keyframes: {
+              'bounce-in': {
+                '0%': { opacity: '0', transform: 'scale(0.3) translateY(20px)' },
+                '100%': { opacity: '1', transform: 'scale(1) translateY(0)' },
+              }
+            }
+          }
+        }
+      }
+    </script>
+    <style>
+      body {
+        font-family: 'Inter', sans-serif;
+      }
+      /* Ensure React Flow takes full height */
+      html, body, #root {
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+      }
+      .scrollbar-hide::-webkit-scrollbar {
+          display: none;
+      }
+      .scrollbar-hide {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+      }
+
+      /* --- CRITICAL FIX: Clean Gray Edges --- */
+      /* Reverted to Gray (Zinc) for cleaner look, straight lines */
+      .react-flow__edge-path {
+        stroke: #a1a1aa !important; /* Zinc-400 - Visible but subtle gray */
+        stroke-width: 1px !important; /* Thinner for cleaner look */
+        opacity: 0.6 !important;
+        fill: none !important;
+      }
+      /* Light mode override to make it slightly darker */
+      html:not(.dark) .react-flow__edge-path {
+        stroke: #71717a !important; /* Zinc-500 */
+        opacity: 0.5 !important;
+      }
+      
+      /* Ensure connection line (while dragging) matches */
+      .react-flow__connection-path {
+        stroke: #71717a !important;
+        stroke-width: 1px !important;
+        stroke-dasharray: 5;
+      }
+    </style>
+    <script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@18.2.0",
+    "react/jsx-runtime": "https://esm.sh/react@18.2.0/jsx-runtime",
+    "react-dom": "https://esm.sh/react-dom@18.2.0",
+    "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+    "reactflow": "https://esm.sh/reactflow@11.10.1?external=react,react-dom",
+    "zustand": "https://esm.sh/zustand@4.5.0?external=react",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.31.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.1/",
+    "react/": "https://aistudiocdn.com/react@^19.2.1/"
+  }
+}
+</script>
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
