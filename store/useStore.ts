@@ -78,6 +78,27 @@ const initialSnippets: Project[] = [
     databaseTags: ['Dev', 'AI', 'React'], 
     nodes: [], edges: [], chatHistory: [], unsavedChanges: false,
     viewState: { x: 0, y: 0, zoom: 1, isMiniMapOpen: true }
+  },
+  {
+    id: 'snip-6',
+    type: 'resource',
+    title: 'Trae AI',
+    url: 'https://www.trae.ai/solo',
+    summary: 'Adaptive AI IDE for developers, featuring native AI integration for faster coding workflows.',
+    updatedAt: 'Just now',
+    databaseTags: ['Dev', 'AI', 'Tools'],
+    nodes: [], edges: [], chatHistory: [], unsavedChanges: false,
+    viewState: { x: 0, y: 0, zoom: 1, isMiniMapOpen: true }
+  },
+  {
+    id: 'snip-7',
+    type: 'note',
+    title: 'Quick Idea',
+    content: 'Need to research more about graph database optimizations...',
+    updatedAt: 'Just now',
+    databaseTags: ['Inbox'],
+    nodes: [], edges: [], chatHistory: [], unsavedChanges: false,
+    viewState: { x: 0, y: 0, zoom: 1, isMiniMapOpen: true }
   }
 ];
 
