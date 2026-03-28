@@ -13,10 +13,13 @@ import {
   Edge
 } from 'reactflow';
 import { MindMapState, MindMapNode, ViewType, Project, ProjectType, ChatMessage, Friend, DirectMessage, Group, Theme, ViewState } from '../types';
+import type { WorkspaceSnapshot } from '../workspace.types';
 import { GoogleGenAI, FunctionDeclaration, Type } from "@google/genai";
+import { AI_CONFIG, getResolvedAIConfig, hasConfiguredAI } from '../ai.config';
 
 // --- VISUAL CONFIG: Straight Gray Lines ---
 const DEFAULT_EDGE_STYLE = { stroke: '#a1a1aa', strokeWidth: 1 }; // Zinc-400
+const DASHED_EDGE_STYLE = { stroke: '#a1a1aa', strokeDasharray: '5,5' };
 
 // --- STRICT PALETTE (3 Core Colors) ---
 const STRICT_PALETTE = [
@@ -28,253 +31,318 @@ const STRICT_PALETTE = [
 // --- Mock Data ---
 
 const initialSnippets: Project[] = [
-  { 
-    id: 'snip-1', 
-    type: 'note', 
-    title: 'React Server Components', 
-    content: 'RSC allows rendering on server... (Snippet)', 
-    updatedAt: '2023-10-12', 
-    databaseTags: ['Inbox', 'Coding', 'React'], 
-    nodes: [], edges: [], chatHistory: [], unsavedChanges: false,
-    viewState: { x: 0, y: 0, zoom: 1, isMiniMapOpen: true }
-  },
-  { 
-    id: 'snip-2', 
-    type: 'note', 
-    title: 'Minimalist Design Idea', 
-    content: 'Less is more... (Snippet)', 
-    updatedAt: '2023-11-20', 
-    databaseTags: ['Inbox', 'Design'], 
-    nodes: [], edges: [], chatHistory: [], unsavedChanges: false,
-    viewState: { x: 0, y: 0, zoom: 1, isMiniMapOpen: true }
-  },
   {
-    id: 'snip-3', 
-    type: 'note', 
-    title: 'Effective Meeting Rules', 
-    content: '**Agenda is mandatory**\n\n1. No phones.\n2. Clear agenda.\n3. Action items at end.\n4. Max 30 mins.',
-    updatedAt: '2023-11-25', 
-    databaseTags: ['Inbox', 'Work', 'Productivity'], 
-    nodes: [], edges: [], chatHistory: [], unsavedChanges: false,
-    viewState: { x: 0, y: 0, zoom: 1, isMiniMapOpen: true }
-  },
-  { 
-    id: 'snip-4', 
-    type: 'note', 
-    title: 'TypeScript Generics', 
-    content: '```typescript\nfunction identity<T>(arg: T): T {\n  return arg;\n}\n```\nUseful for reusable components.',
-    updatedAt: '2023-12-05', 
-    databaseTags: ['Inbox', 'Coding', 'TypeScript'], 
-    nodes: [], edges: [], chatHistory: [], unsavedChanges: false,
-    viewState: { x: 0, y: 0, zoom: 1, isMiniMapOpen: true }
-  },
-  { 
-    id: 'snip-5', 
-    type: 'resource', 
-    title: 'Vercel AI SDK', 
-    url: 'https://sdk.vercel.ai/docs', 
-    summary: 'The AI SDK is a library for building AI-powered applications with React, Svelte, Vue, and Solid.',
-    updatedAt: '2023-12-10', 
-    databaseTags: ['Dev', 'AI', 'React'], 
-    nodes: [], edges: [], chatHistory: [], unsavedChanges: false,
-    viewState: { x: 0, y: 0, zoom: 1, isMiniMapOpen: true }
-  },
-  {
-    id: 'snip-6',
-    type: 'resource',
-    title: 'Trae AI',
-    url: 'https://www.trae.ai/solo',
-    summary: 'Adaptive AI IDE for developers, featuring native AI integration for faster coding workflows.',
-    updatedAt: 'Just now',
-    databaseTags: ['Dev', 'AI', 'Tools'],
-    nodes: [], edges: [], chatHistory: [], unsavedChanges: false,
-    viewState: { x: 0, y: 0, zoom: 1, isMiniMapOpen: true }
-  },
-  {
-    id: 'snip-7',
+    id: 'snip-positioning',
     type: 'note',
-    title: 'Quick Idea',
-    content: 'Need to research more about graph database optimizations...',
-    updatedAt: 'Just now',
-    databaseTags: ['Inbox'],
-    nodes: [], edges: [], chatHistory: [], unsavedChanges: false,
+    title: 'Positioning Draft',
+    content: '# Positioning Draft\n\n**One-liner**\nLinkVerse helps founders turn scattered notes into connected decisions.\n\n**Best-fit users**\n- Solo founders\n- Research-heavy creators\n- Small product teams\n\n**What feels different**\n- Notes become visible structure\n- Context stays attached to ideas\n- Sharing a project is easier than retelling it',
+    updatedAt: 'Mar 28, 2026',
+    databaseTags: ['Inbox', 'Strategy', 'Product'],
+    nodes: [],
+    edges: [],
+    chatHistory: [],
+    unsavedChanges: false,
+    viewState: { x: 0, y: 0, zoom: 1, isMiniMapOpen: true }
+  },
+  {
+    id: 'snip-onboarding',
+    type: 'note',
+    title: 'Onboarding Script',
+    content: '# First Session\n\n1. Start from a template workspace.\n2. Add one note, one graph node, and one saved link.\n3. End with a shareable project summary.\n\n**Success metric**\nUser reaches a meaningful graph in under 5 minutes.',
+    updatedAt: 'Mar 27, 2026',
+    databaseTags: ['Product', 'UX'],
+    nodes: [],
+    edges: [],
+    chatHistory: [],
+    unsavedChanges: false,
+    viewState: { x: 0, y: 0, zoom: 1, isMiniMapOpen: true }
+  },
+  {
+    id: 'snip-research',
+    type: 'note',
+    title: 'Customer Interview Highlights',
+    content: '# Interview Highlights\n\n- Users want notes and graphs to feel like one workspace.\n- Example content lowers blank-canvas anxiety.\n- The first graph matters more than advanced customization.\n- People remember relationships faster than file names.',
+    updatedAt: 'Mar 26, 2026',
+    databaseTags: ['Research', 'Product'],
+    nodes: [],
+    edges: [],
+    chatHistory: [],
+    unsavedChanges: false,
+    viewState: { x: 0, y: 0, zoom: 1, isMiniMapOpen: true }
+  },
+  {
+    id: 'snip-launch',
+    type: 'note',
+    title: 'Launch Checklist',
+    content: '# Launch Checklist\n\n- Record a 45-second product walkthrough\n- Publish three starter templates\n- Prepare FAQ for AI setup and imports\n- Track activation, retention, and team-share events\n- Open a launch-week support inbox',
+    updatedAt: 'Mar 25, 2026',
+    databaseTags: ['Launch', 'Operations'],
+    nodes: [],
+    edges: [],
+    chatHistory: [],
+    unsavedChanges: false,
+    viewState: { x: 0, y: 0, zoom: 1, isMiniMapOpen: true }
+  },
+  {
+    id: 'snip-adapter',
+    type: 'note',
+    title: 'Model Adapter Notes',
+    content: '# Model Adapter Notes\n\n- Default model target: `gemini-2.5-flash`\n- Put the real key in `.env.local`\n- `ai.config.ts` stays as the visible fallback entry point\n- Keep public-facing copy product-first and provider-neutral',
+    updatedAt: 'Mar 24, 2026',
+    databaseTags: ['Inbox', 'AI', 'Engineering'],
+    nodes: [],
+    edges: [],
+    chatHistory: [],
+    unsavedChanges: false,
+    viewState: { x: 0, y: 0, zoom: 1, isMiniMapOpen: true }
+  },
+  {
+    id: 'snip-content',
+    type: 'note',
+    title: 'Content Engine Ideas',
+    content: '# Content Engine Ideas\n\n- Break down one real graph every week\n- Show before/after from note pile to decision map\n- Publish reusable planning templates\n- Turn support answers into short educational posts',
+    updatedAt: 'Mar 23, 2026',
+    databaseTags: ['Growth', 'Launch'],
+    nodes: [],
+    edges: [],
+    chatHistory: [],
+    unsavedChanges: false,
+    viewState: { x: 0, y: 0, zoom: 1, isMiniMapOpen: true }
+  },
+  {
+    id: 'snip-reactflow',
+    type: 'resource',
+    title: 'React Flow Documentation',
+    url: 'https://reactflow.dev',
+    summary: 'Patterns, examples, and API references for building node-based editors and graph UIs.',
+    updatedAt: 'Mar 22, 2026',
+    databaseTags: ['Design', 'Graphs'],
+    nodes: [],
+    edges: [],
+    chatHistory: [],
+    unsavedChanges: false,
+    viewState: { x: 0, y: 0, zoom: 1, isMiniMapOpen: true }
+  },
+  {
+    id: 'snip-zustand',
+    type: 'resource',
+    title: 'Zustand Docs',
+    url: 'https://zustand.docs.pmnd.rs',
+    summary: 'Reference material for managing app state with a small API surface and predictable store structure.',
+    updatedAt: 'Mar 21, 2026',
+    databaseTags: ['Engineering', 'Architecture'],
+    nodes: [],
+    edges: [],
+    chatHistory: [],
+    unsavedChanges: false,
     viewState: { x: 0, y: 0, zoom: 1, isMiniMapOpen: true }
   }
 ];
 
-// --- Demo Graph 1: Frontend Stack ---
-const demoGraphNodes: MindMapNode[] = [
-    { id: 'root-demo', type: 'mindMapNode', position: { x: 0, y: 0 }, data: { label: 'Frontend Tech Stack', importance: 3, nodeType: 'root', source: 'Work', color: STRICT_PALETTE[0] } },
-    
-    // Branch 1: React
-    { id: 'cat-react', type: 'mindMapNode', position: { x: -250, y: 150 }, data: { label: 'React Ecosystem', importance: 2, nodeType: 'category', source: 'React', color: STRICT_PALETTE[1] } },
-    { id: 'leaf-next', type: 'mindMapNode', position: { x: -350, y: 300 }, data: { label: 'Next.js 14', importance: 1, nodeType: 'petal', source: 'React', color: STRICT_PALETTE[2] } },
-    { id: 'leaf-rsc', type: 'mindMapNode', position: { x: -200, y: 350 }, data: { label: 'Server Components', importance: 1, nodeType: 'petal', source: 'React', color: STRICT_PALETTE[2] } },
-
-    // Branch 2: State
-    { id: 'cat-state', type: 'mindMapNode', position: { x: 250, y: 150 }, data: { label: 'State Management', importance: 2, nodeType: 'category', source: 'Coding', color: STRICT_PALETTE[1] } },
-    { id: 'leaf-zustand', type: 'mindMapNode', position: { x: 200, y: 300 }, data: { label: 'Zustand', importance: 1, nodeType: 'petal', source: 'Coding', color: STRICT_PALETTE[2] } },
-    { id: 'leaf-query', type: 'mindMapNode', position: { x: 350, y: 300 }, data: { label: 'TanStack Query', importance: 1, nodeType: 'petal', source: 'Coding', color: STRICT_PALETTE[2] } },
-
-    // Branch 3: Styling
-    { id: 'cat-style', type: 'mindMapNode', position: { x: 0, y: -200 }, data: { label: 'Styling / UI', importance: 2, nodeType: 'category', source: 'Design', color: STRICT_PALETTE[1] } },
-    { id: 'leaf-tailwind', type: 'mindMapNode', position: { x: -100, y: -350 }, data: { label: 'Tailwind CSS', importance: 1, nodeType: 'petal', source: 'Design', color: STRICT_PALETTE[2] } },
-    { id: 'leaf-framer', type: 'mindMapNode', position: { x: 100, y: -350 }, data: { label: 'Framer Motion', importance: 1, nodeType: 'petal', source: 'Design', color: STRICT_PALETTE[2] } },
+const productNarrativeNodes: MindMapNode[] = [
+    { id: 'pn-root', type: 'mindMapNode', position: { x: 0, y: 0 }, data: { label: 'Relationship-First Workspace', importance: 3, nodeType: 'root', source: 'Strategy', color: STRICT_PALETTE[0] } },
+    { id: 'pn-user', type: 'mindMapNode', position: { x: -360, y: -180 }, data: { label: 'Target User', importance: 2, nodeType: 'category', source: 'Product', color: STRICT_PALETTE[1] } },
+    { id: 'pn-workflow', type: 'mindMapNode', position: { x: 0, y: -280 }, data: { label: 'Core Workflow', importance: 2, nodeType: 'category', source: 'Strategy', color: STRICT_PALETTE[1] } },
+    { id: 'pn-diff', type: 'mindMapNode', position: { x: 360, y: -180 }, data: { label: 'Differentiators', importance: 2, nodeType: 'category', source: 'Product', color: STRICT_PALETTE[1] } },
+    { id: 'pn-revenue', type: 'mindMapNode', position: { x: -220, y: 260 }, data: { label: 'Revenue', importance: 2, nodeType: 'category', source: 'Growth', color: STRICT_PALETTE[1] } },
+    { id: 'pn-gtm', type: 'mindMapNode', position: { x: 220, y: 260 }, data: { label: 'Go-To-Market', importance: 2, nodeType: 'category', source: 'Launch', color: STRICT_PALETTE[1] } },
+    { id: 'pn-user-1', type: 'mindMapNode', position: { x: -560, y: -300 }, data: { label: 'Solo founders', importance: 1, nodeType: 'petal', source: 'Product', color: STRICT_PALETTE[2] } },
+    { id: 'pn-user-2', type: 'mindMapNode', position: { x: -460, y: -60 }, data: { label: 'Research-heavy creators', importance: 1, nodeType: 'petal', source: 'Research', color: STRICT_PALETTE[2] } },
+    { id: 'pn-user-3', type: 'mindMapNode', position: { x: -260, y: -40 }, data: { label: 'Small product teams', importance: 1, nodeType: 'petal', source: 'Product', color: STRICT_PALETTE[2] } },
+    { id: 'pn-flow-1', type: 'mindMapNode', position: { x: -140, y: -470 }, data: { label: 'Capture to graph', importance: 1, nodeType: 'petal', source: 'Strategy', color: STRICT_PALETTE[2] } },
+    { id: 'pn-flow-2', type: 'mindMapNode', position: { x: 0, y: -520 }, data: { label: 'Weekly review ritual', importance: 1, nodeType: 'petal', source: 'Operations', color: STRICT_PALETTE[2] } },
+    { id: 'pn-flow-3', type: 'mindMapNode', position: { x: 150, y: -450 }, data: { label: 'Project context panels', importance: 1, nodeType: 'petal', source: 'Product', color: STRICT_PALETTE[2] } },
+    { id: 'pn-diff-1', type: 'mindMapNode', position: { x: 560, y: -300 }, data: { label: 'Visual memory', importance: 1, nodeType: 'petal', source: 'Design', color: STRICT_PALETTE[2] } },
+    { id: 'pn-diff-2', type: 'mindMapNode', position: { x: 460, y: -60 }, data: { label: 'Linkable notes', importance: 1, nodeType: 'petal', source: 'Product', color: STRICT_PALETTE[2] } },
+    { id: 'pn-diff-3', type: 'mindMapNode', position: { x: 250, y: -40 }, data: { label: 'Shared research trails', importance: 1, nodeType: 'petal', source: 'Research', color: STRICT_PALETTE[2] } },
+    { id: 'pn-rev-1', type: 'mindMapNode', position: { x: -380, y: 430 }, data: { label: 'Pro workspace plan', importance: 1, nodeType: 'petal', source: 'Growth', color: STRICT_PALETTE[2] } },
+    { id: 'pn-rev-2', type: 'mindMapNode', position: { x: -120, y: 430 }, data: { label: 'Team seats', importance: 1, nodeType: 'petal', source: 'Growth', color: STRICT_PALETTE[2] } },
+    { id: 'pn-gtm-1', type: 'mindMapNode', position: { x: 60, y: 430 }, data: { label: 'Founder content', importance: 1, nodeType: 'petal', source: 'Launch', color: STRICT_PALETTE[2] } },
+    { id: 'pn-gtm-2', type: 'mindMapNode', position: { x: 280, y: 430 }, data: { label: 'Template packs', importance: 1, nodeType: 'petal', source: 'Launch', color: STRICT_PALETTE[2] } },
+    { id: 'pn-gtm-3', type: 'mindMapNode', position: { x: 430, y: 280 }, data: { label: 'Public teardown posts', importance: 1, nodeType: 'petal', source: 'Growth', color: STRICT_PALETTE[2] } },
 ];
 
-const demoGraphEdges: Edge[] = [
-    { id: 'e-r-1', source: 'root-demo', target: 'cat-react', type: 'straight', style: DEFAULT_EDGE_STYLE },
-    { id: 'e-r-2', source: 'root-demo', target: 'cat-state', type: 'straight', style: DEFAULT_EDGE_STYLE },
-    { id: 'e-r-3', source: 'root-demo', target: 'cat-style', type: 'straight', style: DEFAULT_EDGE_STYLE },
-    
-    { id: 'e-c1-1', source: 'cat-react', target: 'leaf-next', type: 'straight', style: DEFAULT_EDGE_STYLE },
-    { id: 'e-c1-2', source: 'cat-react', target: 'leaf-rsc', type: 'straight', style: DEFAULT_EDGE_STYLE },
-    
-    { id: 'e-c2-1', source: 'cat-state', target: 'leaf-zustand', type: 'straight', style: DEFAULT_EDGE_STYLE },
-    { id: 'e-c2-2', source: 'cat-state', target: 'leaf-query', type: 'straight', style: DEFAULT_EDGE_STYLE },
-
-    { id: 'e-c3-1', source: 'cat-style', target: 'leaf-tailwind', type: 'straight', style: DEFAULT_EDGE_STYLE },
-    { id: 'e-c3-2', source: 'cat-style', target: 'leaf-framer', type: 'straight', style: DEFAULT_EDGE_STYLE },
+const productNarrativeEdges: Edge[] = [
+    { id: 'pn-e-1', source: 'pn-root', target: 'pn-user', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'pn-e-2', source: 'pn-root', target: 'pn-workflow', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'pn-e-3', source: 'pn-root', target: 'pn-diff', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'pn-e-4', source: 'pn-root', target: 'pn-revenue', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'pn-e-5', source: 'pn-root', target: 'pn-gtm', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'pn-e-6', source: 'pn-user', target: 'pn-user-1', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'pn-e-7', source: 'pn-user', target: 'pn-user-2', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'pn-e-8', source: 'pn-user', target: 'pn-user-3', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'pn-e-9', source: 'pn-workflow', target: 'pn-flow-1', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'pn-e-10', source: 'pn-workflow', target: 'pn-flow-2', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'pn-e-11', source: 'pn-workflow', target: 'pn-flow-3', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'pn-e-12', source: 'pn-diff', target: 'pn-diff-1', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'pn-e-13', source: 'pn-diff', target: 'pn-diff-2', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'pn-e-14', source: 'pn-diff', target: 'pn-diff-3', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'pn-e-15', source: 'pn-revenue', target: 'pn-rev-1', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'pn-e-16', source: 'pn-revenue', target: 'pn-rev-2', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'pn-e-17', source: 'pn-gtm', target: 'pn-gtm-1', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'pn-e-18', source: 'pn-gtm', target: 'pn-gtm-2', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'pn-e-19', source: 'pn-gtm', target: 'pn-gtm-3', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'pn-x-1', source: 'pn-flow-1', target: 'pn-gtm-2', type: 'straight', style: DASHED_EDGE_STYLE, label: 'demo hook' },
+    { id: 'pn-x-2', source: 'pn-diff-3', target: 'pn-rev-2', type: 'straight', style: DASHED_EDGE_STYLE, label: 'team upgrade' },
 ];
 
-// --- Demo Graph 2: Complex Architecture (New) ---
-const archNodes: MindMapNode[] = [
-    // Root
-    { id: 'arch-root', type: 'mindMapNode', position: { x: 0, y: 0 }, data: { label: 'Enterprise SaaS Architecture', importance: 3, nodeType: 'root', source: 'Architecture', color: STRICT_PALETTE[0] } },
-
-    // Branch A: Client Side (Top Right)
-    { id: 'arch-client', type: 'mindMapNode', position: { x: 300, y: -200 }, data: { label: 'Client Layer', importance: 2, nodeType: 'category', source: 'Frontend', color: STRICT_PALETTE[1] } },
-    { id: 'arch-pwa', type: 'mindMapNode', position: { x: 450, y: -300 }, data: { label: 'PWA / Mobile', importance: 1, nodeType: 'petal', source: 'Frontend', color: STRICT_PALETTE[2] } },
-    { id: 'arch-state', type: 'mindMapNode', position: { x: 500, y: -150 }, data: { label: 'Global State', importance: 1, nodeType: 'petal', source: 'Frontend', color: STRICT_PALETTE[2] } },
-    { id: 'arch-analytics', type: 'mindMapNode', position: { x: 350, y: -400 }, data: { label: 'Analytics', importance: 1, nodeType: 'petal', source: 'Frontend', color: STRICT_PALETTE[2] } },
-
-    // Branch B: API Gateway (Top Left)
-    { id: 'arch-api', type: 'mindMapNode', position: { x: -300, y: -200 }, data: { label: 'API Gateway', importance: 2, nodeType: 'category', source: 'Backend', color: STRICT_PALETTE[1] } },
-    { id: 'arch-graphql', type: 'mindMapNode', position: { x: -450, y: -350 }, data: { label: 'GraphQL Fed.', importance: 1, nodeType: 'petal', source: 'Backend', color: STRICT_PALETTE[2] } },
-    { id: 'arch-auth', type: 'mindMapNode', position: { x: -200, y: -400 }, data: { label: 'Auth Service', importance: 1, nodeType: 'petal', source: 'Backend', color: STRICT_PALETTE[2] } },
-    { id: 'arch-rate', type: 'mindMapNode', position: { x: -500, y: -150 }, data: { label: 'Rate Limiter', importance: 1, nodeType: 'petal', source: 'Backend', color: STRICT_PALETTE[2] } },
-
-    // Branch C: Data Persistence (Bottom)
-    { id: 'arch-data', type: 'mindMapNode', position: { x: 0, y: 350 }, data: { label: 'Data Persistence', importance: 2, nodeType: 'category', source: 'Database', color: STRICT_PALETTE[1] } },
-    { id: 'arch-postgres', type: 'mindMapNode', position: { x: -150, y: 500 }, data: { label: 'Primary DB (PG)', importance: 1, nodeType: 'petal', source: 'Database', color: STRICT_PALETTE[2] } },
-    { id: 'arch-redis', type: 'mindMapNode', position: { x: 150, y: 500 }, data: { label: 'Redis Cache', importance: 1, nodeType: 'petal', source: 'Database', color: STRICT_PALETTE[2] } },
-    { id: 'arch-vector', type: 'mindMapNode', position: { x: 0, y: 600 }, data: { label: 'Vector Store', importance: 1, nodeType: 'petal', source: 'Database', color: STRICT_PALETTE[2] } },
-
-    // Branch D: Async Workers (Left)
-    { id: 'arch-workers', type: 'mindMapNode', position: { x: -400, y: 150 }, data: { label: 'Async Workers', importance: 2, nodeType: 'category', source: 'DevOps', color: STRICT_PALETTE[1] } },
-    { id: 'arch-queues', type: 'mindMapNode', position: { x: -550, y: 250 }, data: { label: 'Message Queues', importance: 1, nodeType: 'petal', source: 'DevOps', color: STRICT_PALETTE[2] } },
-    { id: 'arch-cron', type: 'mindMapNode', position: { x: -500, y: 50 }, data: { label: 'Cron Jobs', importance: 1, nodeType: 'petal', source: 'DevOps', color: STRICT_PALETTE[2] } },
-
-    // Branch E: AI Services (Right)
-    { id: 'arch-ai', type: 'mindMapNode', position: { x: 400, y: 150 }, data: { label: 'AI Services', importance: 2, nodeType: 'category', source: 'AI', color: STRICT_PALETTE[1] } },
-    { id: 'arch-llm', type: 'mindMapNode', position: { x: 550, y: 100 }, data: { label: 'LLM Provider', importance: 1, nodeType: 'petal', source: 'AI', color: STRICT_PALETTE[2] } },
-    { id: 'arch-rag', type: 'mindMapNode', position: { x: 500, y: 300 }, data: { label: 'RAG Pipeline', importance: 1, nodeType: 'petal', source: 'AI', color: STRICT_PALETTE[2] } },
+const launchFlywheelNodes: MindMapNode[] = [
+    { id: 'lf-root', type: 'mindMapNode', position: { x: 0, y: 0 }, data: { label: 'Launch Flywheel', importance: 3, nodeType: 'root', source: 'Launch', color: STRICT_PALETTE[0] } },
+    { id: 'lf-acq', type: 'mindMapNode', position: { x: -360, y: -140 }, data: { label: 'Acquisition', importance: 2, nodeType: 'category', source: 'Growth', color: STRICT_PALETTE[1] } },
+    { id: 'lf-activation', type: 'mindMapNode', position: { x: 0, y: -280 }, data: { label: 'Activation', importance: 2, nodeType: 'category', source: 'Product', color: STRICT_PALETTE[1] } },
+    { id: 'lf-retention', type: 'mindMapNode', position: { x: 360, y: -140 }, data: { label: 'Retention', importance: 2, nodeType: 'category', source: 'Operations', color: STRICT_PALETTE[1] } },
+    { id: 'lf-conversion', type: 'mindMapNode', position: { x: -220, y: 260 }, data: { label: 'Conversion', importance: 2, nodeType: 'category', source: 'Growth', color: STRICT_PALETTE[1] } },
+    { id: 'lf-ops', type: 'mindMapNode', position: { x: 220, y: 260 }, data: { label: 'Launch Ops', importance: 2, nodeType: 'category', source: 'Operations', color: STRICT_PALETTE[1] } },
+    { id: 'lf-acq-1', type: 'mindMapNode', position: { x: -560, y: -250 }, data: { label: 'Short demo clips', importance: 1, nodeType: 'petal', source: 'Growth', color: STRICT_PALETTE[2] } },
+    { id: 'lf-acq-2', type: 'mindMapNode', position: { x: -470, y: -40 }, data: { label: 'Founder posts', importance: 1, nodeType: 'petal', source: 'Launch', color: STRICT_PALETTE[2] } },
+    { id: 'lf-acq-3', type: 'mindMapNode', position: { x: -250, y: -30 }, data: { label: 'Partner newsletters', importance: 1, nodeType: 'petal', source: 'Growth', color: STRICT_PALETTE[2] } },
+    { id: 'lf-act-1', type: 'mindMapNode', position: { x: -150, y: -460 }, data: { label: 'First graph in 5 min', importance: 1, nodeType: 'petal', source: 'Product', color: STRICT_PALETTE[2] } },
+    { id: 'lf-act-2', type: 'mindMapNode', position: { x: 0, y: -520 }, data: { label: 'Starter workspace', importance: 1, nodeType: 'petal', source: 'UX', color: STRICT_PALETTE[2] } },
+    { id: 'lf-act-3', type: 'mindMapNode', position: { x: 150, y: -450 }, data: { label: 'Import existing note', importance: 1, nodeType: 'petal', source: 'Product', color: STRICT_PALETTE[2] } },
+    { id: 'lf-ret-1', type: 'mindMapNode', position: { x: 560, y: -250 }, data: { label: 'Weekly planning ritual', importance: 1, nodeType: 'petal', source: 'Operations', color: STRICT_PALETTE[2] } },
+    { id: 'lf-ret-2', type: 'mindMapNode', position: { x: 470, y: -40 }, data: { label: 'Saved templates', importance: 1, nodeType: 'petal', source: 'Product', color: STRICT_PALETTE[2] } },
+    { id: 'lf-ret-3', type: 'mindMapNode', position: { x: 250, y: -30 }, data: { label: 'Shared reviews', importance: 1, nodeType: 'petal', source: 'Research', color: STRICT_PALETTE[2] } },
+    { id: 'lf-conv-1', type: 'mindMapNode', position: { x: -360, y: 430 }, data: { label: 'Pro exports', importance: 1, nodeType: 'petal', source: 'Growth', color: STRICT_PALETTE[2] } },
+    { id: 'lf-conv-2', type: 'mindMapNode', position: { x: -120, y: 430 }, data: { label: 'Team workspace', importance: 1, nodeType: 'petal', source: 'Growth', color: STRICT_PALETTE[2] } },
+    { id: 'lf-ops-1', type: 'mindMapNode', position: { x: 80, y: 430 }, data: { label: 'Support inbox', importance: 1, nodeType: 'petal', source: 'Operations', color: STRICT_PALETTE[2] } },
+    { id: 'lf-ops-2', type: 'mindMapNode', position: { x: 320, y: 430 }, data: { label: 'Analytics review', importance: 1, nodeType: 'petal', source: 'Operations', color: STRICT_PALETTE[2] } },
 ];
 
-const archEdges: Edge[] = [
-    // Roots
-    { id: 'e-a-1', source: 'arch-root', target: 'arch-client', type: 'straight', style: DEFAULT_EDGE_STYLE },
-    { id: 'e-a-2', source: 'arch-root', target: 'arch-api', type: 'straight', style: DEFAULT_EDGE_STYLE },
-    { id: 'e-a-3', source: 'arch-root', target: 'arch-data', type: 'straight', style: DEFAULT_EDGE_STYLE },
-    { id: 'e-a-4', source: 'arch-root', target: 'arch-workers', type: 'straight', style: DEFAULT_EDGE_STYLE },
-    { id: 'e-a-5', source: 'arch-root', target: 'arch-ai', type: 'straight', style: DEFAULT_EDGE_STYLE },
-
-    // Leaves
-    { id: 'e-a-c1', source: 'arch-client', target: 'arch-pwa', type: 'straight', style: DEFAULT_EDGE_STYLE },
-    { id: 'e-a-c2', source: 'arch-client', target: 'arch-state', type: 'straight', style: DEFAULT_EDGE_STYLE },
-    { id: 'e-a-c3', source: 'arch-client', target: 'arch-analytics', type: 'straight', style: DEFAULT_EDGE_STYLE },
-
-    { id: 'e-a-ap1', source: 'arch-api', target: 'arch-graphql', type: 'straight', style: DEFAULT_EDGE_STYLE },
-    { id: 'e-a-ap2', source: 'arch-api', target: 'arch-auth', type: 'straight', style: DEFAULT_EDGE_STYLE },
-    { id: 'e-a-ap3', source: 'arch-api', target: 'arch-rate', type: 'straight', style: DEFAULT_EDGE_STYLE },
-
-    { id: 'e-a-d1', source: 'arch-data', target: 'arch-postgres', type: 'straight', style: DEFAULT_EDGE_STYLE },
-    { id: 'e-a-d2', source: 'arch-data', target: 'arch-redis', type: 'straight', style: DEFAULT_EDGE_STYLE },
-    { id: 'e-a-d3', source: 'arch-data', target: 'arch-vector', type: 'straight', style: DEFAULT_EDGE_STYLE },
-
-    { id: 'e-a-w1', source: 'arch-workers', target: 'arch-queues', type: 'straight', style: DEFAULT_EDGE_STYLE },
-    { id: 'e-a-w2', source: 'arch-workers', target: 'arch-cron', type: 'straight', style: DEFAULT_EDGE_STYLE },
-
-    { id: 'e-a-ai1', source: 'arch-ai', target: 'arch-llm', type: 'straight', style: DEFAULT_EDGE_STYLE },
-    { id: 'e-a-ai2', source: 'arch-ai', target: 'arch-rag', type: 'straight', style: DEFAULT_EDGE_STYLE },
-    
-    // Cross Links (Complexity)
-    { id: 'e-x-1', source: 'arch-auth', target: 'arch-client', type: 'straight', style: { stroke: '#a1a1aa', strokeDasharray: '5,5' }, label: 'Token' },
-    { id: 'e-x-2', source: 'arch-vector', target: 'arch-rag', type: 'straight', style: { stroke: '#a1a1aa', strokeDasharray: '5,5' }, label: 'Retrieval' },
-    { id: 'e-x-3', source: 'arch-queues', target: 'arch-redis', type: 'straight', style: { stroke: '#a1a1aa', strokeDasharray: '5,5' } },
+const launchFlywheelEdges: Edge[] = [
+    { id: 'lf-e-1', source: 'lf-root', target: 'lf-acq', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'lf-e-2', source: 'lf-root', target: 'lf-activation', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'lf-e-3', source: 'lf-root', target: 'lf-retention', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'lf-e-4', source: 'lf-root', target: 'lf-conversion', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'lf-e-5', source: 'lf-root', target: 'lf-ops', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'lf-e-6', source: 'lf-acq', target: 'lf-acq-1', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'lf-e-7', source: 'lf-acq', target: 'lf-acq-2', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'lf-e-8', source: 'lf-acq', target: 'lf-acq-3', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'lf-e-9', source: 'lf-activation', target: 'lf-act-1', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'lf-e-10', source: 'lf-activation', target: 'lf-act-2', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'lf-e-11', source: 'lf-activation', target: 'lf-act-3', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'lf-e-12', source: 'lf-retention', target: 'lf-ret-1', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'lf-e-13', source: 'lf-retention', target: 'lf-ret-2', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'lf-e-14', source: 'lf-retention', target: 'lf-ret-3', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'lf-e-15', source: 'lf-conversion', target: 'lf-conv-1', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'lf-e-16', source: 'lf-conversion', target: 'lf-conv-2', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'lf-e-17', source: 'lf-ops', target: 'lf-ops-1', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'lf-e-18', source: 'lf-ops', target: 'lf-ops-2', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'lf-x-1', source: 'lf-act-2', target: 'lf-acq-1', type: 'straight', style: DASHED_EDGE_STYLE, label: 'promise match' },
+    { id: 'lf-x-2', source: 'lf-ret-3', target: 'lf-conv-2', type: 'straight', style: DASHED_EDGE_STYLE, label: 'expansion signal' },
 ];
 
+const platformNodes: MindMapNode[] = [
+    { id: 'pf-root', type: 'mindMapNode', position: { x: 0, y: 0 }, data: { label: 'Workspace Platform', importance: 3, nodeType: 'root', source: 'Architecture', color: STRICT_PALETTE[0] } },
+    { id: 'pf-capture', type: 'mindMapNode', position: { x: -360, y: -180 }, data: { label: 'Capture Layer', importance: 2, nodeType: 'category', source: 'Product', color: STRICT_PALETTE[1] } },
+    { id: 'pf-graph', type: 'mindMapNode', position: { x: 0, y: -280 }, data: { label: 'Graph Engine', importance: 2, nodeType: 'category', source: 'Engineering', color: STRICT_PALETTE[1] } },
+    { id: 'pf-collab', type: 'mindMapNode', position: { x: 360, y: -180 }, data: { label: 'Collaboration', importance: 2, nodeType: 'category', source: 'Product', color: STRICT_PALETTE[1] } },
+    { id: 'pf-model', type: 'mindMapNode', position: { x: -220, y: 260 }, data: { label: 'Model Gateway', importance: 2, nodeType: 'category', source: 'AI', color: STRICT_PALETTE[1] } },
+    { id: 'pf-reliability', type: 'mindMapNode', position: { x: 220, y: 260 }, data: { label: 'Reliability', importance: 2, nodeType: 'category', source: 'Operations', color: STRICT_PALETTE[1] } },
+    { id: 'pf-cap-1', type: 'mindMapNode', position: { x: -560, y: -280 }, data: { label: 'Note editor', importance: 1, nodeType: 'petal', source: 'Product', color: STRICT_PALETTE[2] } },
+    { id: 'pf-cap-2', type: 'mindMapNode', position: { x: -460, y: -50 }, data: { label: 'Web clipper', importance: 1, nodeType: 'petal', source: 'Research', color: STRICT_PALETTE[2] } },
+    { id: 'pf-cap-3', type: 'mindMapNode', position: { x: -250, y: -30 }, data: { label: 'Import pipeline', importance: 1, nodeType: 'petal', source: 'Engineering', color: STRICT_PALETTE[2] } },
+    { id: 'pf-graph-1', type: 'mindMapNode', position: { x: -150, y: -470 }, data: { label: 'Node schema', importance: 1, nodeType: 'petal', source: 'Engineering', color: STRICT_PALETTE[2] } },
+    { id: 'pf-graph-2', type: 'mindMapNode', position: { x: 0, y: -520 }, data: { label: 'Relation scoring', importance: 1, nodeType: 'petal', source: 'AI', color: STRICT_PALETTE[2] } },
+    { id: 'pf-graph-3', type: 'mindMapNode', position: { x: 150, y: -450 }, data: { label: 'View sync', importance: 1, nodeType: 'petal', source: 'Architecture', color: STRICT_PALETTE[2] } },
+    { id: 'pf-col-1', type: 'mindMapNode', position: { x: 560, y: -280 }, data: { label: 'Share links', importance: 1, nodeType: 'petal', source: 'Product', color: STRICT_PALETTE[2] } },
+    { id: 'pf-col-2', type: 'mindMapNode', position: { x: 460, y: -50 }, data: { label: 'Comments', importance: 1, nodeType: 'petal', source: 'Product', color: STRICT_PALETTE[2] } },
+    { id: 'pf-col-3', type: 'mindMapNode', position: { x: 250, y: -30 }, data: { label: 'Presence state', importance: 1, nodeType: 'petal', source: 'Operations', color: STRICT_PALETTE[2] } },
+    { id: 'pf-model-1', type: 'mindMapNode', position: { x: -380, y: 430 }, data: { label: 'Provider config', importance: 1, nodeType: 'petal', source: 'AI', color: STRICT_PALETTE[2] } },
+    { id: 'pf-model-2', type: 'mindMapNode', position: { x: -120, y: 430 }, data: { label: 'Prompt orchestration', importance: 1, nodeType: 'petal', source: 'AI', color: STRICT_PALETTE[2] } },
+    { id: 'pf-model-3', type: 'mindMapNode', position: { x: -240, y: 560 }, data: { label: 'Tool actions', importance: 1, nodeType: 'petal', source: 'Engineering', color: STRICT_PALETTE[2] } },
+    { id: 'pf-rel-1', type: 'mindMapNode', position: { x: 80, y: 430 }, data: { label: 'Persistence', importance: 1, nodeType: 'petal', source: 'Architecture', color: STRICT_PALETTE[2] } },
+    { id: 'pf-rel-2', type: 'mindMapNode', position: { x: 320, y: 430 }, data: { label: 'Rate guard', importance: 1, nodeType: 'petal', source: 'Operations', color: STRICT_PALETTE[2] } },
+    { id: 'pf-rel-3', type: 'mindMapNode', position: { x: 220, y: 560 }, data: { label: 'Telemetry', importance: 1, nodeType: 'petal', source: 'Operations', color: STRICT_PALETTE[2] } },
+];
+
+const platformEdges: Edge[] = [
+    { id: 'pf-e-1', source: 'pf-root', target: 'pf-capture', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'pf-e-2', source: 'pf-root', target: 'pf-graph', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'pf-e-3', source: 'pf-root', target: 'pf-collab', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'pf-e-4', source: 'pf-root', target: 'pf-model', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'pf-e-5', source: 'pf-root', target: 'pf-reliability', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'pf-e-6', source: 'pf-capture', target: 'pf-cap-1', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'pf-e-7', source: 'pf-capture', target: 'pf-cap-2', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'pf-e-8', source: 'pf-capture', target: 'pf-cap-3', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'pf-e-9', source: 'pf-graph', target: 'pf-graph-1', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'pf-e-10', source: 'pf-graph', target: 'pf-graph-2', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'pf-e-11', source: 'pf-graph', target: 'pf-graph-3', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'pf-e-12', source: 'pf-collab', target: 'pf-col-1', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'pf-e-13', source: 'pf-collab', target: 'pf-col-2', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'pf-e-14', source: 'pf-collab', target: 'pf-col-3', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'pf-e-15', source: 'pf-model', target: 'pf-model-1', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'pf-e-16', source: 'pf-model', target: 'pf-model-2', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'pf-e-17', source: 'pf-model', target: 'pf-model-3', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'pf-e-18', source: 'pf-reliability', target: 'pf-rel-1', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'pf-e-19', source: 'pf-reliability', target: 'pf-rel-2', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'pf-e-20', source: 'pf-reliability', target: 'pf-rel-3', type: 'straight', style: DEFAULT_EDGE_STYLE },
+    { id: 'pf-x-1', source: 'pf-model-1', target: 'pf-rel-2', type: 'straight', style: DASHED_EDGE_STYLE, label: 'quota' },
+    { id: 'pf-x-2', source: 'pf-graph-3', target: 'pf-rel-1', type: 'straight', style: DASHED_EDGE_STYLE, label: 'autosave' },
+];
 
 const initialProjects: Project[] = [
   {
-    id: 'proj-1',
+    id: 'proj-product-narrative',
     type: 'graph',
-    title: '2024 Q1 Roadmap',
-    updatedAt: '2 hours ago',
-    databaseTags: ['Personal', 'Graphs'],
-    nodes: [
-      { id: 'root-1', type: 'mindMapNode', position: { x: 0, y: 0 }, data: { label: '2024 Goals', importance: 3, nodeType: 'root', source: 'Personal', color: STRICT_PALETTE[0] } },
-      { id: 'node-ex-1', type: 'mindMapNode', position: { x: 250, y: 100 }, data: { label: 'Product Launch', importance: 1, nodeType: 'petal', source: 'Personal', color: STRICT_PALETTE[1] } },
-      { id: 'node-ex-2', type: 'mindMapNode', position: { x: -200, y: 150 }, data: { label: 'Team Hiring', importance: 1, nodeType: 'petal', source: 'Personal', color: STRICT_PALETTE[2] } }
-    ],
-    edges: [
-        { id: 'e1-2', source: 'root-1', target: 'node-ex-1', type: 'straight', style: DEFAULT_EDGE_STYLE },
-        { id: 'e1-3', source: 'root-1', target: 'node-ex-2', type: 'straight', style: DEFAULT_EDGE_STYLE }
-    ],
+    title: 'Product Narrative Map',
+    updatedAt: 'Mar 28, 2026',
+    databaseTags: ['Strategy', 'Product', 'Graphs'],
+    nodes: productNarrativeNodes,
+    edges: productNarrativeEdges,
     chatHistory: [],
     content: '',
     unsavedChanges: false,
-    viewState: { x: 0, y: 0, zoom: 1, isMiniMapOpen: true }
+    viewState: { x: 0, y: 0, zoom: 0.7, isMiniMapOpen: true }
   },
   {
-    id: 'proj-demo-graph',
+    id: 'proj-launch-flywheel',
     type: 'graph',
-    title: 'Frontend Tech Stack (Work)',
-    updatedAt: '4 hours ago',
-    databaseTags: ['Work', 'React', 'Graphs'],
-    nodes: demoGraphNodes,
-    edges: demoGraphEdges,
+    title: 'Launch Flywheel',
+    updatedAt: 'Mar 27, 2026',
+    databaseTags: ['Launch', 'Growth', 'Graphs'],
+    nodes: launchFlywheelNodes,
+    edges: launchFlywheelEdges,
     chatHistory: [],
     content: '',
     unsavedChanges: false,
-    viewState: { x: 0, y: 0, zoom: 0.8, isMiniMapOpen: true }
+    viewState: { x: 0, y: 0, zoom: 0.72, isMiniMapOpen: true }
   },
   {
-    id: 'proj-demo-arch',
+    id: 'proj-platform-arch',
     type: 'graph',
-    title: 'Enterprise SaaS Architecture',
-    updatedAt: '1 hour ago',
-    databaseTags: ['Work', 'Architecture', 'DevOps'],
-    nodes: archNodes,
-    edges: archEdges,
+    title: 'Workspace Platform Architecture',
+    updatedAt: 'Mar 26, 2026',
+    databaseTags: ['Architecture', 'AI', 'Graphs'],
+    nodes: platformNodes,
+    edges: platformEdges,
     chatHistory: [],
     content: '',
     unsavedChanges: false,
-    viewState: { x: 0, y: 0, zoom: 0.65, isMiniMapOpen: true }
+    viewState: { x: 0, y: 0, zoom: 0.68, isMiniMapOpen: true }
   },
   {
-    id: 'proj-2',
-    type: 'note', 
-    title: 'Weekly Sync Notes',
-    updatedAt: '1 day ago',
-    databaseTags: ['Work'],
+    id: 'proj-launch-command',
+    type: 'note',
+    title: 'Launch Week Command Center',
+    updatedAt: 'Mar 25, 2026',
+    databaseTags: ['Launch', 'Operations'],
     nodes: [],
     edges: [],
-    content: '# Weekly Sync\n\n**Attendees**: All\n\n- Focus on growth\n- User retention\n- ==AI features priority==',
+    content: '# Launch Week Command Center\n\n**North star**\nShip a product experience that feels complete on day one.\n\n**Daily review block**\n- Activation funnel\n- Support volume\n- Template usage\n- Team shares\n\n**Watch list**\n- Slow first graph creation\n- API setup confusion\n- Empty-state drop-off',
     chatHistory: [],
     unsavedChanges: false,
     viewState: { x: 0, y: 0, zoom: 1, isMiniMapOpen: true }
   },
   {
-    id: 'proj-3',
+    id: 'proj-growth-reference',
     type: 'resource',
-    title: 'GenAI Docs',
-    updatedAt: '3 days ago',
-    databaseTags: ['Dev'],
+    title: 'Growth Design Case Studies',
+    updatedAt: 'Mar 24, 2026',
+    databaseTags: ['Research', 'Growth'],
     nodes: [],
     edges: [],
-    url: 'https://ai.google.dev',
-    summary: 'Official documentation for Google Gemini API.',
+    url: 'https://growth.design/case-studies',
+    summary: 'Swipe file for onboarding, activation, and habit-forming product patterns.',
     chatHistory: [],
     content: '',
     unsavedChanges: false,
@@ -301,11 +369,114 @@ const initialDirectMessages: DirectMessage[] = [
 ];
 
 const allProjects = [...initialProjects, ...initialSnippets];
+const starterProjects = allProjects;
+const DEFAULT_VIEW_STATE: ViewState = { x: 0, y: 0, zoom: 1, isMiniMapOpen: true };
+
+const normalizeProject = (project: Partial<Project> | undefined, index: number): Project | null => {
+    if (!project) return null;
+
+    const inferredType: ProjectType =
+        project.type === 'graph' || project.type === 'note' || project.type === 'resource'
+            ? project.type
+            : project.url
+                ? 'resource'
+                : project.nodes?.length || project.edges?.length
+                    ? 'graph'
+                    : 'note';
+
+    const normalizedViewState = project.viewState
+        ? {
+            x: typeof project.viewState.x === 'number' ? project.viewState.x : DEFAULT_VIEW_STATE.x,
+            y: typeof project.viewState.y === 'number' ? project.viewState.y : DEFAULT_VIEW_STATE.y,
+            zoom: typeof project.viewState.zoom === 'number' ? project.viewState.zoom : DEFAULT_VIEW_STATE.zoom,
+            isMiniMapOpen:
+                typeof project.viewState.isMiniMapOpen === 'boolean'
+                    ? project.viewState.isMiniMapOpen
+                    : DEFAULT_VIEW_STATE.isMiniMapOpen,
+        }
+        : DEFAULT_VIEW_STATE;
+
+    return {
+        id: project.id || `legacy-project-${index}`,
+        type: inferredType,
+        title: project.title || `Untitled ${inferredType === 'graph' ? 'Graph' : 'Project'}`,
+        updatedAt: project.updatedAt || 'Recently',
+        databaseTags: Array.isArray(project.databaseTags) ? project.databaseTags.filter(Boolean) : [],
+        unsavedChanges: Boolean(project.unsavedChanges),
+        viewState: normalizedViewState,
+        nodes: Array.isArray(project.nodes) ? project.nodes : [],
+        edges: Array.isArray(project.edges) ? project.edges : [],
+        content: typeof project.content === 'string' ? project.content : '',
+        url: typeof project.url === 'string' ? project.url : undefined,
+        summary: typeof project.summary === 'string' ? project.summary : '',
+        chatHistory: Array.isArray(project.chatHistory) ? project.chatHistory : [],
+    };
+};
 
 const allTags = new Set([
     ...allProjects.flatMap(p => p.databaseTags),
     'Graphs'
 ]);
+
+const mergeStarterProjects = (persistedProjects: Project[] = []) => {
+    const normalizedPersistedProjects = persistedProjects
+        .map((project, index) => normalizeProject(project, index))
+        .filter((project): project is Project => Boolean(project));
+    const existingIds = new Set(normalizedPersistedProjects.map(project => project.id));
+    return [
+        ...normalizedPersistedProjects,
+        ...starterProjects.filter(project => !existingIds.has(project.id))
+    ];
+};
+
+const buildAvailableTags = (projects: Project[], persistedTags: string[] = []) =>
+    Array.from(new Set([
+        ...persistedTags,
+        ...projects.flatMap(project => project.databaseTags),
+        'Graphs'
+    ]));
+
+export const createDefaultWorkspaceSnapshot = (): WorkspaceSnapshot => {
+    const projects = mergeStarterProjects([]);
+    return {
+        projects,
+        availableTags: buildAvailableTags(projects, []),
+        theme: 'light',
+    };
+};
+
+export const normalizeWorkspaceSnapshot = (snapshot?: Partial<WorkspaceSnapshot> | null): WorkspaceSnapshot => {
+    const projects = mergeStarterProjects(Array.isArray(snapshot?.projects) ? snapshot.projects : []);
+    return {
+        projects,
+        availableTags: buildAvailableTags(projects, Array.isArray(snapshot?.availableTags) ? snapshot.availableTags : []),
+        theme: snapshot?.theme === 'dark' ? 'dark' : 'light',
+    };
+};
+
+export const getWorkspaceSnapshotFromState = (state: WorkspaceSnapshot): WorkspaceSnapshot => ({
+    projects: state.projects,
+    availableTags: state.availableTags,
+    theme: state.theme,
+});
+
+const safeStorage = createJSONStorage<StoreState>(() => ({
+    getItem: (name) => {
+        const value = localStorage.getItem(name);
+        if (value === null) return null;
+
+        try {
+            JSON.parse(value);
+            return value;
+        } catch (error) {
+            console.warn(`Skipping invalid persisted state for ${name}.`, error);
+            localStorage.removeItem(name);
+            return null;
+        }
+    },
+    setItem: (name, value) => localStorage.setItem(name, value),
+    removeItem: (name) => localStorage.removeItem(name),
+}));
 
 interface StoreState extends MindMapState {
     isLibrarySidebarCollapsed: boolean;
@@ -313,6 +484,7 @@ interface StoreState extends MindMapState {
     toggleLibrarySidebar: () => void;
     toggleAgentPanel: () => void;
     updateEdgeLabel: (edgeId: string, label: string) => void;
+    replaceWorkspace: (workspace: WorkspaceSnapshot) => void;
 }
 
 // ... existing code ... (The rest of the file remains unchanged, preserving cleanJsonOutput, tool declarations, AI client, and useStore implementation)
@@ -381,16 +553,19 @@ const syncGraphTool: FunctionDeclaration = {
     }
 };
 
-// Helper to safely get AI instance
-const getAIClient = () => {
-    // Check if process is defined (Node/Build env)
-    // In many frontend builds, process.env is replaced by the bundler.
-    // However, if the key is missing, we don't want to crash the whole app on load.
-    const apiKey = typeof process !== 'undefined' && process.env ? process.env.API_KEY : '';
-    if (!apiKey) {
-        console.warn("API Key is missing. AI features will not work.");
+const notifyMissingAIConfig = () => {
+    console.warn(AI_CONFIG.missingConfigMessage);
+    if (typeof window !== 'undefined') {
+        window.alert(AI_CONFIG.missingConfigMessage);
     }
-    return new GoogleGenAI({ apiKey: apiKey || 'dummy-key-to-prevent-crash' });
+};
+
+const getAIClient = () => {
+    const resolvedAIConfig = getResolvedAIConfig();
+    if (!hasConfiguredAI(resolvedAIConfig)) {
+        return null;
+    }
+    return new GoogleGenAI({ apiKey: resolvedAIConfig.apiKey });
 };
 
 export const useStore = create<StoreState>()(
@@ -469,6 +644,21 @@ export const useStore = create<StoreState>()(
           };
       }),
       setGraphFilters: (tags) => set({ activeGraphFilters: tags }),
+      replaceWorkspace: (workspaceSnapshot) => {
+          const workspace = normalizeWorkspaceSnapshot(workspaceSnapshot);
+          set({
+              projects: workspace.projects,
+              availableTags: workspace.availableTags,
+              theme: workspace.theme,
+              activeProjectId: null,
+              nodes: [],
+              edges: [],
+              activeProjectContent: '',
+              chatMessages: [],
+              currentView: 'dashboard',
+              activeGraphFilters: []
+          });
+      },
 
       markProjectAsDirty: (projectId: string) => {
         set(state => ({
@@ -1013,6 +1203,11 @@ export const useStore = create<StoreState>()(
 
               // 2. AI Call - Lazy Init
               const ai = getAIClient();
+              if (!ai) {
+                  notifyMissingAIConfig();
+                  set({ isSyncing: false });
+                  return;
+              }
               const prompt = `
                 You are a "Conservative Knowledge Graph Synchronization Engine".
                 
@@ -1045,7 +1240,7 @@ export const useStore = create<StoreState>()(
               `;
               
               const response = await ai.models.generateContent({
-                  model: 'gemini-2.5-flash',
+                  model: getResolvedAIConfig().model,
                   contents: prompt,
                   config: { responseMimeType: "application/json" }
               });
@@ -1135,8 +1330,15 @@ export const useStore = create<StoreState>()(
       
           try {
               const ai = getAIClient();
+              if (!ai) {
+                  notifyMissingAIConfig();
+                  set((state) => ({
+                      nodes: state.nodes.map((n) => n.id === parentNodeId ? { ...n, data: { ...n.data, isGenerating: false } } : n)
+                  }));
+                  return;
+              }
               const response = await ai.models.generateContent({
-                  model: 'gemini-2.5-flash',
+                  model: getResolvedAIConfig().model,
                   contents: `Based on "${parentNode.data.label}" (Summary: ${parentNode.data.summary || ''}), generate 3-4 diverse and creative "Petal" associations (related concepts). Return JSON: { "concepts": [{ "label": string, "summary": string }] }`,
                   config: { responseMimeType: "application/json" }
               });
@@ -1227,6 +1429,10 @@ export const useStore = create<StoreState>()(
 
           try {
             const ai = getAIClient();
+            if (!ai) {
+                notifyMissingAIConfig();
+                return;
+            }
             const prompt = `
             You are a generic knowledge graph generator.
             Context from databases [${selectedTags.join(', ')}]:
@@ -1276,7 +1482,7 @@ export const useStore = create<StoreState>()(
             `;
 
             const response = await ai.models.generateContent({
-                model: 'gemini-2.5-flash',
+                model: getResolvedAIConfig().model,
                 contents: prompt,
                 config: { responseMimeType: "application/json" }
             });
@@ -1470,8 +1676,19 @@ export const useStore = create<StoreState>()(
               }
 
               const ai = getAIClient();
+              if (!ai) {
+                  notifyMissingAIConfig();
+                  const errorMsg: ChatMessage = {
+                      id: `err-${Date.now()}`,
+                      role: 'model',
+                      text: AI_CONFIG.missingConfigMessage,
+                      timestamp: Date.now()
+                  };
+                  set(state => ({ chatMessages: [...state.chatMessages, errorMsg] }));
+                  return;
+              }
               const response = await ai.models.generateContent({
-                  model: 'gemini-2.5-flash',
+                  model: getResolvedAIConfig().model,
                   contents: `Context:\n${context}\n\nUser: ${text}`,
                   config: { 
                       tools: [{ functionDeclarations: toolsList }],
@@ -1533,7 +1750,23 @@ export const useStore = create<StoreState>()(
     }),
     {
       name: 'linkverse-storage', // Key in localStorage
-      storage: createJSONStorage(() => localStorage),
+      storage: safeStorage,
+      merge: (persistedState, currentState) => {
+        const typedPersistedState = (persistedState || {}) as Partial<StoreState>;
+        const normalizedWorkspace = normalizeWorkspaceSnapshot({
+          projects: typedPersistedState.projects,
+          availableTags: typedPersistedState.availableTags,
+          theme: typedPersistedState.theme,
+        });
+
+        return {
+          ...currentState,
+          ...typedPersistedState,
+          projects: normalizedWorkspace.projects,
+          availableTags: normalizedWorkspace.availableTags,
+          theme: normalizedWorkspace.theme,
+        };
+      },
       // Only persist essential data to avoid lag
       partialize: (state) => ({
         projects: state.projects,

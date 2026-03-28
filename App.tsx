@@ -9,23 +9,39 @@ import ReactFlow, {
   ReactFlowProvider,
   Edge
 } from 'reactflow';
-import { useStore } from './store/useStore';
+import {
+  createDefaultWorkspaceSnapshot,
+  getWorkspaceSnapshotFromState,
+  normalizeWorkspaceSnapshot,
+  useStore,
+} from './store/useStore';
+import BrandLogo from './components/BrandLogo';
 import MindNode from './components/MindNode';
 import { ProjectType, Friend } from './types';
+import {
+  AI_CONFIG,
+  clearStoredAISettings,
+  getResolvedAIConfig,
+  getStoredAISettings,
+  saveStoredAISettings,
+} from './ai.config';
+import {
+  getCurrentUser,
+  getCachedWorkspaceOwnerId,
+  hasAnyLocalAccount,
+  fetchWorkspaceSnapshot,
+  hydrateAuthMeta,
+  hydrateCurrentUser,
+  loginLocalAccount,
+  logoutLocalAccount,
+  registerLocalAccount,
+  saveWorkspaceSnapshot,
+  setCachedWorkspaceOwnerId,
+  updateCurrentUserProfile,
+  type SessionUser,
+} from './auth';
 
 // --- Icons (Zinc/Gray styled) ---
-const IconLogo = (props: React.SVGProps<SVGSVGElement>) => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
-    {/* Hexagon Container representing "LinkVerse" */}
-    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
-    {/* Internal Network Structure */}
-    <path d="M12 12V7" />
-    <path d="M12 12l4.5 4" />
-    <path d="M12 12l-4.5 4" />
-    {/* Central Core Node */}
-    <circle cx="12" cy="12" r="2" fill="currentColor" className="text-zinc-900 dark:text-zinc-100" />
-  </svg>
-);
 const IconFile = (props: React.SVGProps<SVGSVGElement>) => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>;
 const IconDatabase = (props: React.SVGProps<SVGSVGElement>) => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>;
 const IconUsers = (props: React.SVGProps<SVGSVGElement>) => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>;
@@ -70,8 +86,344 @@ const IconLayers = (props: React.SVGProps<SVGSVGElement>) => <svg xmlns="http://
 const IconRefresh = (props: React.SVGProps<SVGSVGElement>) => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>;
 const IconEye = (props: React.SVGProps<SVGSVGElement>) => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>;
 const IconEyeOff = (props: React.SVGProps<SVGSVGElement>) => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" x2="22" y1="2" y2="22"/></svg>;
+const IconLogOut = (props: React.SVGProps<SVGSVGElement>) => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/><path d="M13 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8"/></svg>;
 
 // --- Components ---
+
+const AuthCursor = ({ tone = 'default' }: { tone?: 'default' | 'strong' }) => (
+    <span
+        aria-hidden="true"
+        className={`auth-cursor ${tone === 'strong' ? 'auth-cursor--strong' : ''}`}
+    />
+);
+
+const AuthLoopingTitle = ({
+    text,
+    animate,
+}: {
+    text: string,
+    animate: boolean,
+}) => {
+    const [visibleLength, setVisibleLength] = useState(animate ? 0 : text.length);
+    const [direction, setDirection] = useState<1 | -1>(1);
+
+    useEffect(() => {
+        if (!animate) {
+            setVisibleLength(text.length);
+            setDirection(1);
+            return;
+        }
+
+        setVisibleLength(0);
+        setDirection(1);
+    }, [animate, text]);
+
+    useEffect(() => {
+        if (!animate) {
+            return;
+        }
+
+        let delay = direction === 1 ? 54 : 34;
+
+        if (direction === 1 && visibleLength === 0) {
+            delay = 280;
+        } else if (direction === 1 && visibleLength >= text.length) {
+            delay = 1200;
+        } else if (direction === -1 && visibleLength === 0) {
+            delay = 320;
+        }
+
+        const timer = window.setTimeout(() => {
+            if (direction === 1) {
+                if (visibleLength < text.length) {
+                    setVisibleLength((current) => Math.min(current + 1, text.length));
+                    return;
+                }
+
+                setDirection(-1);
+                return;
+            }
+
+            if (visibleLength > 0) {
+                setVisibleLength((current) => Math.max(current - 1, 0));
+                return;
+            }
+
+            setDirection(1);
+        }, delay);
+
+        return () => window.clearTimeout(timer);
+    }, [animate, direction, text, visibleLength]);
+
+    return (
+        <span className="inline-flex items-end gap-1 whitespace-pre-wrap break-words">
+            <span>{text.slice(0, visibleLength)}</span>
+            {animate && <AuthCursor tone="strong" />}
+        </span>
+    );
+};
+
+const AuthField = ({
+    step,
+    prompt,
+    active,
+    helper,
+    children,
+}: {
+    step: string,
+    prompt: string,
+    active?: boolean,
+    helper?: string,
+    children: React.ReactNode,
+}) => (
+    <div className="auth-step rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/80 dark:bg-zinc-900/70 p-4">
+        <div className="flex items-center gap-3 mb-3">
+            <div className="w-7 h-7 rounded-full bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-[11px] font-semibold text-zinc-500 dark:text-zinc-400 flex items-center justify-center">
+                {step}
+            </div>
+            <div className="min-w-0 flex-1 text-sm font-medium text-zinc-800 dark:text-zinc-100">
+                {prompt}
+                {active && <AuthCursor />}
+            </div>
+        </div>
+        {children}
+        {helper && <p className="mt-2 text-xs text-zinc-400">{helper}</p>}
+    </div>
+);
+
+const AuthView = ({
+    onAuthenticated,
+    hasAccounts,
+    onHasAccountsChange,
+}: {
+    onAuthenticated: (user: SessionUser) => void,
+    hasAccounts: boolean,
+    onHasAccountsChange: (hasAccounts: boolean) => void,
+}) => {
+    const [mode, setMode] = useState<'login' | 'register'>('login');
+    const [displayName, setDisplayName] = useState('');
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
+    const [apiKey, setApiKey] = useState('');
+    const [model, setModel] = useState(AI_CONFIG.defaultModel);
+    const [errorMessage, setErrorMessage] = useState('');
+    const [isSubmitting, setIsSubmitting] = useState(false);
+
+    const handleSubmit = async (event: React.FormEvent) => {
+        event.preventDefault();
+        setErrorMessage('');
+        setIsSubmitting(true);
+
+        try {
+            if (mode === 'register') {
+                if (password !== confirmPassword) {
+                    setErrorMessage('Passwords do not match.');
+                    return;
+                }
+
+                const result = await registerLocalAccount({
+                    displayName,
+                    email,
+                    password,
+                    apiKey,
+                    aiModel: model,
+                    workspace: createDefaultWorkspaceSnapshot(),
+                });
+
+                if (result.error || !result.user) {
+                    setErrorMessage(result.error || 'Could not create account.');
+                    return;
+                }
+
+                onHasAccountsChange(true);
+                onAuthenticated(result.user);
+                return;
+            }
+
+            const result = await loginLocalAccount({ email, password });
+            if (result.error || !result.user) {
+                setErrorMessage(result.error || 'Could not sign in.');
+                return;
+            }
+
+            onAuthenticated(result.user);
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    const showEmailStep = mode === 'login' || Boolean(displayName.trim());
+    const showPasswordStep = Boolean(email.trim());
+    const showConfirmStep = mode === 'register' && Boolean(password.trim());
+    const showApiStep = mode === 'register' && Boolean(confirmPassword.trim());
+    const hasStartedForm = Boolean(
+        displayName.trim() ||
+        email.trim() ||
+        password.trim() ||
+        confirmPassword.trim() ||
+        apiKey.trim()
+    );
+
+    return (
+        <div className="h-screen w-screen overflow-y-auto bg-[linear-gradient(180deg,#f7f7f8_0%,#ffffff_100%)] dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100">
+            <div className="min-h-full px-5 py-8 sm:px-8 sm:py-12 flex items-start justify-center sm:items-center">
+                <div className="w-full max-w-xl">
+                    <div className="rounded-[28px] border border-zinc-200 dark:border-zinc-800 bg-white/92 dark:bg-zinc-900/92 backdrop-blur-xl shadow-[0_24px_80px_rgba(15,23,42,0.08)] p-6 sm:p-8">
+                        <div className="mb-7 flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 flex items-center justify-center shadow-sm">
+                                <BrandLogo className="w-5 h-5" />
+                            </div>
+                            <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">LinkVerse</div>
+                        </div>
+
+                        <div className="flex gap-2 mb-8 bg-zinc-100 dark:bg-zinc-800 p-1 rounded-2xl">
+                            <button
+                                onClick={() => setMode('login')}
+                                disabled={isSubmitting}
+                                className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors ${mode === 'login' ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-sm' : 'text-zinc-500 dark:text-zinc-400'}`}
+                            >
+                                Log in
+                            </button>
+                            <button
+                                onClick={() => setMode('register')}
+                                disabled={isSubmitting}
+                                className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors ${mode === 'register' ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-sm' : 'text-zinc-500 dark:text-zinc-400'}`}
+                            >
+                                Create account
+                            </button>
+                        </div>
+
+                        <div className="mb-8">
+                            <div className="text-[11px] uppercase tracking-[0.24em] text-zinc-400 mb-3">Step by step</div>
+                            <h1 className="text-3xl sm:text-[2rem] leading-tight font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
+                                <AuthLoopingTitle
+                                    key={`auth-title-${mode}`}
+                                    text={mode === 'login' ? 'Welcome back.' : 'Create your workspace account.'}
+                                    animate={!hasStartedForm}
+                                />
+                            </h1>
+                        </div>
+
+                        {errorMessage && (
+                            <div className="mb-5 rounded-2xl border border-red-200 bg-red-50 text-red-700 px-4 py-3 text-sm dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-300">
+                                {errorMessage}
+                            </div>
+                        )}
+
+                        <form onSubmit={handleSubmit} className="space-y-4">
+                            {mode === 'register' && (
+                                <AuthField
+                                    step="01"
+                                    prompt="What should we call this account"
+                                    active={!displayName.trim()}
+                                >
+                                    <input
+                                        className="w-full px-3 py-3 border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 rounded-xl text-sm"
+                                        value={displayName}
+                                        onChange={(e) => setDisplayName(e.target.value)}
+                                        placeholder="Display name"
+                                        disabled={isSubmitting}
+                                    />
+                                </AuthField>
+                            )}
+
+                            {showEmailStep && (
+                                <AuthField
+                                    step={mode === 'login' ? '01' : '02'}
+                                    prompt="Type the email"
+                                    active={Boolean((mode === 'login' ? !email.trim() : displayName.trim() && !email.trim()))}
+                                >
+                                    <input
+                                        type="email"
+                                        className="w-full px-3 py-3 border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 rounded-xl text-sm"
+                                        value={email}
+                                        onChange={(e) => setEmail(e.target.value)}
+                                        placeholder="name@example.com"
+                                        autoComplete="email"
+                                        disabled={isSubmitting}
+                                    />
+                                </AuthField>
+                            )}
+
+                            {showPasswordStep && (
+                                <AuthField
+                                    step={mode === 'login' ? '02' : '03'}
+                                    prompt="Choose the password"
+                                    active={Boolean(email.trim() && !password.trim())}
+                                    helper="Use 6 characters or more."
+                                >
+                                    <input
+                                        type="password"
+                                        className="w-full px-3 py-3 border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 rounded-xl text-sm"
+                                        value={password}
+                                        onChange={(e) => setPassword(e.target.value)}
+                                        placeholder="Password"
+                                        autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+                                        disabled={isSubmitting}
+                                    />
+                                </AuthField>
+                            )}
+
+                            {showConfirmStep && (
+                                <AuthField
+                                    step="04"
+                                    prompt="Confirm the password"
+                                    active={Boolean(password.trim() && !confirmPassword.trim())}
+                                >
+                                    <input
+                                        type="password"
+                                        className="w-full px-3 py-3 border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 rounded-xl text-sm"
+                                        value={confirmPassword}
+                                        onChange={(e) => setConfirmPassword(e.target.value)}
+                                        placeholder="Repeat password"
+                                        autoComplete="new-password"
+                                        disabled={isSubmitting}
+                                    />
+                                </AuthField>
+                            )}
+
+                            {showApiStep && (
+                                <AuthField
+                                    step="05"
+                                    prompt="Optional: store your API key now"
+                                    active={!apiKey.trim()}
+                                    helper="You can also skip this and fill it later in Settings."
+                                >
+                                    <div className="space-y-3">
+                                        <input
+                                            type="password"
+                                            className="w-full px-3 py-3 border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 rounded-xl text-sm"
+                                            value={apiKey}
+                                            onChange={(e) => setApiKey(e.target.value)}
+                                            placeholder="Gemini API key"
+                                            disabled={isSubmitting}
+                                        />
+                                        <input
+                                            className="w-full px-3 py-3 border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 rounded-xl text-sm"
+                                            value={model}
+                                            onChange={(e) => setModel(e.target.value)}
+                                            placeholder={AI_CONFIG.defaultModel}
+                                            disabled={isSubmitting}
+                                        />
+                                    </div>
+                                </AuthField>
+                            )}
+
+                            <button
+                                type="submit"
+                                disabled={isSubmitting}
+                                className="w-full mt-2 py-3 rounded-2xl bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 text-sm font-medium hover:bg-zinc-800 dark:hover:bg-zinc-200 transition-colors shadow-sm"
+                            >
+                                {isSubmitting ? 'Please wait...' : mode === 'login' ? 'Continue' : 'Create account'}
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
 
 const Toast = ({ message, onClose }: { message: string, onClose: () => void }) => {
     useEffect(() => {
@@ -465,7 +817,7 @@ const ShareModal = ({ entity, type, onClose }: { entity: any, type: 'project' | 
     };
 
     const copyLink = () => {
-        const url = type === 'project' ? `https://youmind.app/p/${entity.id}` : `https://youmind.app/db/${entity}`;
+        const url = type === 'project' ? `https://linkverse.app/p/${entity.id}` : `https://linkverse.app/db/${entity}`;
         navigator.clipboard.writeText(url);
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
@@ -538,8 +890,8 @@ const GeneratorView = () => {
          <div className="flex items-center justify-center h-full flex-col bg-[#FDFDFD] dark:bg-zinc-950 p-4">
              <div className="p-8 bg-white dark:bg-zinc-900 rounded-2xl shadow-xl border border-zinc-100 dark:border-zinc-800 max-w-lg w-full text-center">
                 <div className="w-16 h-16 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-full flex items-center justify-center mx-auto mb-6"><IconGraph className="w-8 h-8" /></div>
-                <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-100 mb-2">AI Logic Generator</h2>
-                <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-8">Select databases to generate a comprehensive knowledge graph.</p>
+                <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-100 mb-2">Context Graph Generator</h2>
+                <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-8">Select databases to generate a structured mind graph from your notes, research, and saved resources.</p>
                 <div className="bg-zinc-50 dark:bg-zinc-800 rounded-xl p-5 mb-8 text-left">
                     <h4 className="text-xs font-bold text-zinc-400 uppercase mb-3 tracking-wider">Select Context Sources</h4>
                     <div className="flex flex-wrap gap-2">
@@ -550,7 +902,7 @@ const GeneratorView = () => {
                     </div>
                 </div>
                 <button onClick={handleGenerate} disabled={selectedTags.length === 0 || isGenerating} className={`w-full py-3 rounded-xl font-semibold text-sm transition-all flex items-center justify-center gap-2 ${selectedTags.length > 0 ? 'bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 hover:scale-[1.02] shadow-lg' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400 cursor-not-allowed'}`}>
-                    {isGenerating ? <><div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> Generating Graph...</> : <><IconMagic className="w-4 h-4" /> Generate Knowledge Graph</>}
+                    {isGenerating ? <><div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> Generating Mind Graph...</> : <><IconMagic className="w-4 h-4" /> Generate Mind Graph</>}
                 </button>
              </div>
          </div>
@@ -571,7 +923,7 @@ const DashboardView = ({ onCreateProject, onRename, onDelete, onShare }: any) =>
              <div className="flex items-center justify-between mb-8">
                  <div>
                     <h2 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-100 tracking-tight">Workspace</h2>
-                    <p className="text-zinc-500 dark:text-zinc-400 mt-1 text-sm">Access your graphs, notes, and saved resources.</p>
+                    <p className="text-zinc-500 dark:text-zinc-400 mt-1 text-sm">Map strategy, notes, and references in one relationship-first workspace.</p>
                  </div>
                  <button onClick={onCreateProject} className="flex items-center gap-2 bg-zinc-900 dark:bg-zinc-100 hover:bg-zinc-800 dark:hover:bg-zinc-200 text-white dark:text-zinc-900 px-4 py-2 rounded-lg font-medium text-sm transition-colors shadow-sm"><IconPlus /> New Project</button>
              </div>
@@ -730,7 +1082,7 @@ const LibraryView = ({ onRename, onDelete, onShare, onShareDatabase }: any) => {
             </div>
             <div className="flex-1 p-8 overflow-y-auto bg-white dark:bg-zinc-900">
                 <div className="flex items-center justify-between mb-8">
-                    <div><h2 className="text-2xl font-semibold text-zinc-800 dark:text-zinc-100 mb-2 tracking-tight">{selectedTag ? `${selectedTag} Database` : 'All Knowledge'}</h2><p className="text-zinc-400 text-sm">Manage your unified projects and captured ideas.</p></div>
+                    <div><h2 className="text-2xl font-semibold text-zinc-800 dark:text-zinc-100 mb-2 tracking-tight">{selectedTag ? `${selectedTag} Database` : 'All Knowledge'}</h2><p className="text-zinc-400 text-sm">Manage graphs, notes, and saved references from a single library.</p></div>
                     <div className="flex gap-1 bg-zinc-100 dark:bg-zinc-900 p-1 rounded-lg">
                         <button onClick={() => setViewMode('grid')} className={`p-1.5 rounded ${viewMode === 'grid' ? 'bg-white dark:bg-zinc-800 shadow-sm text-zinc-800 dark:text-zinc-200' : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'}`}><IconGrid className="w-4 h-4" /></button>
                         <button onClick={() => setViewMode('list')} className={`p-1.5 rounded ${viewMode === 'list' ? 'bg-white dark:bg-zinc-800 shadow-sm text-zinc-800 dark:text-zinc-200' : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'}`}><IconList className="w-4 h-4" /></button>
@@ -841,15 +1193,254 @@ const NoteEditor = () => {
     );
 };
 
-const SettingsView = () => (
-    <div className="max-w-4xl mx-auto p-8 h-full overflow-y-auto bg-white dark:bg-zinc-950">
-        <h2 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100 mb-6">Settings</h2>
-        <div className="grid grid-cols-4 gap-8">
-            <div className="col-span-1 space-y-1"><button className="w-full text-left px-3 py-2 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 font-medium rounded-lg text-sm">Profile</button><button className="w-full text-left px-3 py-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium rounded-lg text-sm">Appearance</button><button className="w-full text-left px-3 py-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium rounded-lg text-sm">Notifications</button></div>
-            <div className="col-span-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-8"><div className="flex items-center gap-6 mb-8"><div className="w-20 h-20 bg-zinc-200 dark:bg-zinc-700 rounded-full"></div><div><h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">Alex Chen</h3><p className="text-zinc-500 dark:text-zinc-400 text-sm">alex.chen@example.com</p><button className="mt-2 text-xs text-blue-600 dark:text-blue-400 font-medium">Change Avatar</button></div></div><div className="space-y-6"><div><label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">Display Name</label><input className="w-full max-w-md px-3 py-2 border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 rounded-lg text-sm" defaultValue="Alex Chen" /></div><div><label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">Bio</label><textarea className="w-full max-w-md px-3 py-2 border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 rounded-lg text-sm" rows={3} defaultValue="Product Designer & Mind Mapper" /></div></div></div>
+const SettingsView = ({ currentUser, onUserChange, onLogout }: { currentUser: SessionUser, onUserChange: (user: SessionUser) => void, onLogout: () => void }) => {
+    const [displayName, setDisplayName] = useState(currentUser.displayName);
+    const [apiKey, setApiKey] = useState('');
+    const [model, setModel] = useState(AI_CONFIG.defaultModel);
+    const [statusMessage, setStatusMessage] = useState<string | null>(null);
+    const [showKey, setShowKey] = useState(false);
+    const [resolvedConfig, setResolvedConfig] = useState(getResolvedAIConfig());
+
+    const refreshResolvedConfig = () => {
+        const storedSettings = getStoredAISettings();
+        setApiKey(storedSettings.apiKey || '');
+        setModel(storedSettings.model || AI_CONFIG.defaultModel);
+        setResolvedConfig(getResolvedAIConfig());
+    };
+
+    useEffect(() => {
+        refreshResolvedConfig();
+        setDisplayName(currentUser.displayName);
+    }, [currentUser]);
+
+    const handleProfileSave = async () => {
+        const updatedUser = await updateCurrentUserProfile({ displayName });
+        if (!updatedUser) {
+            setStatusMessage('Could not update profile.');
+            return;
+        }
+
+        onUserChange(updatedUser);
+        setStatusMessage('Profile updated.');
+    };
+
+    const handleSave = async () => {
+        const updatedUser = await saveStoredAISettings({ apiKey, model });
+        if (updatedUser) {
+            onUserChange(updatedUser);
+        }
+        refreshResolvedConfig();
+        setStatusMessage('AI settings saved for this account.');
+    };
+
+    const handleClear = async () => {
+        const updatedUser = await clearStoredAISettings();
+        if (updatedUser) {
+            onUserChange(updatedUser);
+        }
+        refreshResolvedConfig();
+        setStatusMessage('Account API override cleared. Falling back to deployment config.');
+    };
+
+    useEffect(() => {
+        if (!statusMessage) return;
+        const timer = window.setTimeout(() => setStatusMessage(null), 2500);
+        return () => window.clearTimeout(timer);
+    }, [statusMessage]);
+
+    const sourceLabel =
+        resolvedConfig.source === 'browser'
+            ? 'Using account override'
+            : resolvedConfig.source === 'environment'
+                ? 'Using deployment environment variable'
+                : 'Not configured yet';
+
+    return (
+        <div className="max-w-5xl mx-auto p-8 h-full overflow-y-auto bg-white dark:bg-zinc-950">
+            <h2 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100 mb-2">Settings</h2>
+            <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-8">
+                Manage local AI access for this browser without editing source files.
+            </p>
+
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+                <div className="space-y-1">
+                    <button className="w-full text-left px-3 py-2 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 font-medium rounded-lg text-sm">
+                        AI Access
+                    </button>
+                    <button className="w-full text-left px-3 py-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium rounded-lg text-sm">
+                        Profile
+                    </button>
+                    <button className="w-full text-left px-3 py-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium rounded-lg text-sm">
+                        Appearance
+                    </button>
+                </div>
+
+                <div className="lg:col-span-3 space-y-6">
+                    <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-8">
+                        <div className="flex items-start justify-between gap-6 mb-8">
+                            <div>
+                                <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">Gemini API Setup</h3>
+                                <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">
+                                    Your key is stored with this local test account. Deployment environment variables still work as fallback.
+                                </p>
+                            </div>
+                            <div className={`px-3 py-1 rounded-full text-xs font-medium ${
+                                resolvedConfig.source === 'browser'
+                                    ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
+                                    : resolvedConfig.source === 'environment'
+                                        ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-300'
+                                        : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300'
+                            }`}>
+                                {sourceLabel}
+                            </div>
+                        </div>
+
+                        <div className="space-y-6">
+                            <div className="grid md:grid-cols-[1.2fr_0.8fr] gap-6">
+                                <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 p-5 bg-zinc-50/70 dark:bg-zinc-950/40">
+                                    <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 mb-4">Account</div>
+                                    <div className="space-y-4">
+                                        <div>
+                                            <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                                                Display Name
+                                            </label>
+                                            <input
+                                                className="w-full px-3 py-2 border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 rounded-lg text-sm"
+                                                value={displayName}
+                                                onChange={(e) => setDisplayName(e.target.value)}
+                                            />
+                                        </div>
+                                        <div>
+                                            <div className="text-xs text-zinc-400 mb-1">Email</div>
+                                            <div className="text-sm text-zinc-700 dark:text-zinc-200">{currentUser.email}</div>
+                                        </div>
+                                        <div className="flex flex-wrap gap-2">
+                                            <span className="px-2.5 py-1 rounded-full bg-zinc-100 dark:bg-zinc-800 text-xs text-zinc-600 dark:text-zinc-300">{currentUser.role}</span>
+                                            <span className="px-2.5 py-1 rounded-full bg-zinc-100 dark:bg-zinc-800 text-xs text-zinc-600 dark:text-zinc-300">{currentUser.plan}</span>
+                                        </div>
+                                        <div className="flex flex-wrap gap-3">
+                                            <button
+                                                onClick={handleProfileSave}
+                                                className="px-4 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm font-medium text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-800"
+                                            >
+                                                Save Profile
+                                            </button>
+                                            <button
+                                                onClick={onLogout}
+                                                className="px-4 py-2 border border-red-200 dark:border-red-900/40 rounded-lg text-sm font-medium text-red-600 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2"
+                                            >
+                                                <IconLogOut className="w-4 h-4" /> Sign Out
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 p-5 bg-zinc-50/70 dark:bg-zinc-950/40">
+                                    <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 mb-4">Current User</div>
+                                    <div className="flex items-center gap-4">
+                                        <div className="w-14 h-14 rounded-2xl bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 flex items-center justify-center font-semibold">
+                                            {currentUser.initials}
+                                        </div>
+                                        <div>
+                                            <div className="font-medium text-zinc-900 dark:text-zinc-100">{currentUser.displayName}</div>
+                                            <div className="text-sm text-zinc-500 dark:text-zinc-400">{currentUser.email}</div>
+                                        </div>
+                                    </div>
+                                    <p className="text-xs text-zinc-400 mt-4 leading-5">
+                                        API settings below are attached to this local account, so your test users can hold different keys later.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                                    API Key
+                                </label>
+                                <div className="flex gap-2">
+                                    <input
+                                        type={showKey ? 'text' : 'password'}
+                                        className="w-full px-3 py-2 border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 rounded-lg text-sm"
+                                        placeholder="Paste your Gemini API key"
+                                        value={apiKey}
+                                        onChange={(e) => setApiKey(e.target.value)}
+                                        spellCheck={false}
+                                    />
+                                    <button
+                                        onClick={() => setShowKey((value) => !value)}
+                                        className="px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 text-sm text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800"
+                                    >
+                                        {showKey ? 'Hide' : 'Show'}
+                                    </button>
+                                </div>
+                                <p className="text-xs text-zinc-400 mt-2">
+                                    Leave this empty if you want to keep using the deployment-provided key.
+                                </p>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                                    Model
+                                </label>
+                                <input
+                                    className="w-full max-w-md px-3 py-2 border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 rounded-lg text-sm"
+                                    value={model}
+                                    onChange={(e) => setModel(e.target.value)}
+                                    placeholder={AI_CONFIG.defaultModel}
+                                    spellCheck={false}
+                                />
+                                <p className="text-xs text-zinc-400 mt-2">
+                                    Default is `{AI_CONFIG.defaultModel}`.
+                                </p>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-3">
+                                <button
+                                    onClick={handleSave}
+                                    className="px-4 py-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-lg text-sm font-medium hover:bg-zinc-800 dark:hover:bg-zinc-200"
+                                >
+                                    Save AI Settings
+                                </button>
+                                <button
+                                    onClick={handleClear}
+                                    className="px-4 py-2 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800"
+                                >
+                                    Clear Browser Override
+                                </button>
+                                {statusMessage && (
+                                    <span className="text-sm text-emerald-600 dark:text-emerald-400">{statusMessage}</span>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 rounded-xl p-6">
+                        <h4 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 mb-3">Current Runtime</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                            <div>
+                                <div className="text-zinc-400 mb-1">Provider</div>
+                                <div className="text-zinc-700 dark:text-zinc-200">{resolvedConfig.providerLabel}</div>
+                            </div>
+                            <div>
+                                <div className="text-zinc-400 mb-1">Model</div>
+                                <div className="text-zinc-700 dark:text-zinc-200">{resolvedConfig.model}</div>
+                            </div>
+                            <div>
+                                <div className="text-zinc-400 mb-1">Key Source</div>
+                                <div className="text-zinc-700 dark:text-zinc-200">{sourceLabel}</div>
+                            </div>
+                            <div>
+                                <div className="text-zinc-400 mb-1">Status</div>
+                                <div className="text-zinc-700 dark:text-zinc-200">
+                                    {resolvedConfig.source === 'placeholder' ? 'Missing API key' : 'Ready'}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
-    </div>
-);
+    );
+};
 
 // ... (Existing DatabaseSelector, ResourceViewer, AgentPanel)
 const DatabaseSelector = ({ projectId, isOpen, onToggle }: { projectId: string, isOpen: boolean, onToggle: () => void }) => {
@@ -888,7 +1479,7 @@ const ResourceViewer = ({ project }: { project: any }) => {
         <div className="h-full flex flex-col bg-zinc-50 dark:bg-zinc-950">
             <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-center justify-between shrink-0">
                 <div className="flex items-center gap-3 overflow-hidden"><div className="p-2 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 rounded-lg"><IconLink className="w-4 h-4" /></div><div className="min-w-0"><h2 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 truncate">{project.title}</h2><a href={project.url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-500 hover:underline truncate block">{project.url}</a></div></div>
-                <div className="flex items-center gap-4"><div className="text-right hidden sm:block"><div className="text-[10px] text-zinc-400 uppercase tracking-wider font-bold">AI Summary</div><div className="text-xs text-zinc-600 dark:text-zinc-400 max-w-[200px] truncate">{project.summary || 'No summary'}</div></div><a href={project.url} target="_blank" rel="noreferrer" className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-500 transition-colors" title="Open in new tab"><IconExternal className="w-4 h-4" /></a></div>
+                <div className="flex items-center gap-4"><div className="text-right hidden sm:block"><div className="text-[10px] text-zinc-400 uppercase tracking-wider font-bold">Summary</div><div className="text-xs text-zinc-600 dark:text-zinc-400 max-w-[200px] truncate">{project.summary || 'No summary'}</div></div><a href={project.url} target="_blank" rel="noreferrer" className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-500 transition-colors" title="Open in new tab"><IconExternal className="w-4 h-4" /></a></div>
             </div>
             <div className="flex-1 relative bg-white dark:bg-zinc-900 overflow-hidden">
                 {!loadError ? (
@@ -971,7 +1562,7 @@ const AgentPanel = () => {
 
             <div className="h-14 flex items-center justify-between px-4 border-b border-zinc-100 dark:border-zinc-800">
                 <div className="flex items-center gap-2 font-bold text-sm text-indigo-600 dark:text-indigo-400">
-                    <IconMagic className="w-4 h-4" /> AI Assistant
+                    <IconMagic className="w-4 h-4" /> Workspace Copilot
                 </div>
                 <button onClick={toggleAgentPanel} className="text-zinc-400 hover:text-zinc-600"><IconX className="w-4 h-4" /></button>
             </div>
@@ -993,7 +1584,7 @@ const AgentPanel = () => {
                 <div className="relative">
                     <input 
                         className="w-full pl-3 pr-10 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500" 
-                        placeholder="Ask AI..." 
+                        placeholder="Ask the copilot to expand, connect, or sync..." 
                         value={input}
                         onChange={e => setInput(e.target.value)}
                         onKeyDown={e => e.key === 'Enter' && handleSend()}
@@ -1252,23 +1843,167 @@ const FlowEditor = ({ activeProject, theme, nodeTypes, onRename }: any) => { // 
 export default function App() {
   const { 
     activeProjectId, isSidebarCollapsed, toggleSidebar,
-    currentView, setView, projects, saveProject, theme, toggleTheme,
-    deleteProject, editingNodeId
+    currentView, setView, projects, availableTags, saveProject, theme, toggleTheme,
+    deleteProject, editingNodeId, replaceWorkspace
   } = useStore();
+  const [currentUser, setCurrentUser] = useState<SessionUser | null>(() => getCurrentUser());
+  const [hasAccounts, setHasAccounts] = useState(() => hasAnyLocalAccount());
+  const [isAuthReady, setIsAuthReady] = useState(false);
+  const [isWorkspaceReady, setIsWorkspaceReady] = useState(false);
 
   const [isNewProjectModalOpen, setIsNewProjectModalOpen] = useState(false);
   const [projectToRename, setProjectToRename] = useState<any>(null);
   const [projectToShare, setProjectToShare] = useState<any>(null);
   const [databaseToShare, setDatabaseToShare] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const lastSavedWorkspaceRef = useRef('');
+  const workspaceSaveTimerRef = useRef<number | null>(null);
   
   const activeProject = projects.find(p => p.id === activeProjectId);
+  const workspaceSnapshot = useMemo(
+    () => getWorkspaceSnapshotFromState({ projects, availableTags, theme }),
+    [projects, availableTags, theme]
+  );
+  const workspaceSignature = useMemo(
+    () => JSON.stringify(workspaceSnapshot),
+    [workspaceSnapshot]
+  );
 
   // Sync Theme with DOM
   useEffect(() => {
     if (theme === 'dark') document.documentElement.classList.add('dark');
     else document.documentElement.classList.remove('dark');
   }, [theme]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const hydrateSession = async () => {
+      const [user, nextHasAccounts] = await Promise.all([
+        hydrateCurrentUser(),
+        hydrateAuthMeta(),
+      ]);
+
+      if (!isMounted) return;
+
+      setCurrentUser(user);
+      setHasAccounts(nextHasAccounts);
+      setIsAuthReady(true);
+    };
+
+    void hydrateSession();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    const syncWorkspaceState = async () => {
+      if (!isAuthReady) {
+        return;
+      }
+
+      if (!currentUser) {
+        lastSavedWorkspaceRef.current = '';
+        setIsWorkspaceReady(true);
+        return;
+      }
+
+      setIsWorkspaceReady(false);
+
+      const remoteResult = await fetchWorkspaceSnapshot();
+      if (isCancelled) return;
+
+      if (remoteResult.error) {
+        const localSnapshot = normalizeWorkspaceSnapshot(
+          getWorkspaceSnapshotFromState(useStore.getState())
+        );
+        lastSavedWorkspaceRef.current = JSON.stringify(localSnapshot);
+        setToastMessage('Cloud sync is temporarily unavailable. Your local workspace is still here.');
+        setIsWorkspaceReady(true);
+        return;
+      }
+
+      if (remoteResult.workspace) {
+        const normalizedWorkspace = normalizeWorkspaceSnapshot(remoteResult.workspace);
+        replaceWorkspace(normalizedWorkspace);
+        lastSavedWorkspaceRef.current = JSON.stringify(normalizedWorkspace);
+        setCachedWorkspaceOwnerId(currentUser.id);
+        setIsWorkspaceReady(true);
+        return;
+      }
+
+      const cachedOwnerId = getCachedWorkspaceOwnerId();
+      const fallbackWorkspace =
+        cachedOwnerId === currentUser.id
+          ? normalizeWorkspaceSnapshot(getWorkspaceSnapshotFromState(useStore.getState()))
+          : createDefaultWorkspaceSnapshot();
+
+      replaceWorkspace(fallbackWorkspace);
+
+      const savedWorkspaceResult = await saveWorkspaceSnapshot(fallbackWorkspace);
+      if (isCancelled) return;
+
+      const persistedWorkspace = savedWorkspaceResult.workspace
+        ? normalizeWorkspaceSnapshot(savedWorkspaceResult.workspace)
+        : fallbackWorkspace;
+
+      lastSavedWorkspaceRef.current = JSON.stringify(persistedWorkspace);
+      setCachedWorkspaceOwnerId(currentUser.id);
+
+      if (savedWorkspaceResult.error) {
+        setToastMessage('Cloud sync could not seed this account yet. The starter workspace is ready locally.');
+      }
+
+      setIsWorkspaceReady(true);
+    };
+
+    void syncWorkspaceState();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [currentUser, isAuthReady, replaceWorkspace]);
+
+  useEffect(() => {
+    if (!currentUser || !isWorkspaceReady) {
+      if (workspaceSaveTimerRef.current) {
+        window.clearTimeout(workspaceSaveTimerRef.current);
+        workspaceSaveTimerRef.current = null;
+      }
+      return;
+    }
+
+    if (workspaceSignature === lastSavedWorkspaceRef.current) {
+      return;
+    }
+
+    if (workspaceSaveTimerRef.current) {
+      window.clearTimeout(workspaceSaveTimerRef.current);
+    }
+
+    workspaceSaveTimerRef.current = window.setTimeout(async () => {
+      const result = await saveWorkspaceSnapshot(workspaceSnapshot);
+      if (!result.workspace) {
+        setToastMessage('Cloud sync failed. Changes still remain in this browser.');
+        return;
+      }
+
+      const normalizedWorkspace = normalizeWorkspaceSnapshot(result.workspace);
+      lastSavedWorkspaceRef.current = JSON.stringify(normalizedWorkspace);
+      setCachedWorkspaceOwnerId(currentUser.id);
+    }, 900);
+
+    return () => {
+      if (workspaceSaveTimerRef.current) {
+        window.clearTimeout(workspaceSaveTimerRef.current);
+        workspaceSaveTimerRef.current = null;
+      }
+    };
+  }, [currentUser, isWorkspaceReady, workspaceSignature, workspaceSnapshot]);
 
   // Global Keydown for Ctrl+S
   useEffect(() => {
@@ -1287,11 +2022,45 @@ export default function App() {
 
   const nodeTypes = useMemo(() => ({ mindMapNode: MindNode }), []);
 
+  const handleAuthSuccess = (user: SessionUser) => {
+      setCurrentUser(user);
+      setHasAccounts(true);
+      setIsWorkspaceReady(false);
+      setView('dashboard');
+  };
+
+  const handleLogout = async () => {
+      if (workspaceSaveTimerRef.current) {
+          window.clearTimeout(workspaceSaveTimerRef.current);
+          workspaceSaveTimerRef.current = null;
+      }
+      await logoutLocalAccount();
+      lastSavedWorkspaceRef.current = '';
+      setCurrentUser(null);
+      setIsWorkspaceReady(true);
+      setView('dashboard');
+  };
+
   const handleDelete = (id: string) => {
       if (window.confirm("Are you sure you want to delete this project? This cannot be undone.")) {
           deleteProject(id);
       }
   };
+
+  if (!isAuthReady || (currentUser && !isWorkspaceReady)) {
+      return (
+        <div className="h-screen w-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-950 text-zinc-500">
+          <div className="flex items-center gap-3 text-sm">
+            <div className="w-4 h-4 border-2 border-zinc-300 border-t-zinc-900 dark:border-zinc-700 dark:border-t-zinc-100 rounded-full animate-spin"></div>
+            Loading workspace...
+          </div>
+        </div>
+      );
+  }
+
+  if (!currentUser) {
+      return <AuthView onAuthenticated={handleAuthSuccess} hasAccounts={hasAccounts} onHasAccountsChange={setHasAccounts} />;
+  }
 
   const renderContent = () => {
     switch (currentView) {
@@ -1315,7 +2084,7 @@ export default function App() {
       case 'boards': return <GeneratorView />;
       case 'friends': return <FriendsView mode="friends" />;
       case 'team': return <FriendsView mode="team" />;
-      case 'settings': return <SettingsView />;
+      case 'settings': return <SettingsView currentUser={currentUser} onUserChange={setCurrentUser} onLogout={handleLogout} />;
       default: return <div className="flex items-center justify-center h-full text-zinc-400">Work in progress...</div>;
     }
   };
@@ -1325,12 +2094,12 @@ export default function App() {
       {toastMessage && <Toast message={toastMessage} onClose={() => setToastMessage(null)} />}
       <div className={`${isSidebarCollapsed ? 'w-16' : 'w-64'} bg-white/80 dark:bg-zinc-950/80 backdrop-blur-xl border-r border-zinc-200 dark:border-zinc-800 flex flex-col transition-all duration-300 z-40 shadow-sm`}>
         <div className="h-16 flex items-center justify-between px-6 border-b border-zinc-100 dark:border-zinc-800/50">
-          {!isSidebarCollapsed && <div className="flex items-center gap-2"><div className="w-6 h-6 text-zinc-900 dark:text-white"><IconLogo /></div><span className="font-bold text-lg tracking-tight text-zinc-900 dark:text-zinc-100">LinkVerse</span></div>}
+          {!isSidebarCollapsed && <div className="flex items-center gap-2"><BrandLogo className="w-6 h-6 shrink-0" /><span className="font-bold text-lg tracking-tight text-zinc-900 dark:text-zinc-100">LinkVerse</span></div>}
           <button onClick={toggleSidebar} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-400 transition-colors"><IconSidebar /></button>
         </div>
         <nav className="flex-1 py-6 px-3 space-y-6 overflow-y-auto">
           <div>
-              {!isSidebarCollapsed && <div className="px-3 mb-2 text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Studio</div>}
+              {!isSidebarCollapsed && <div className="px-3 mb-2 text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Workspace</div>}
               <div className="space-y-1">
                   <button onClick={() => setView('dashboard')} className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all ${currentView === 'dashboard' ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100' : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 hover:text-zinc-900 dark:hover:text-zinc-100'}`}><IconHome />{!isSidebarCollapsed && <span>Workspace</span>}</button>
                   <button onClick={() => setView('boards')} className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all ${currentView === 'boards' ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100' : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 hover:text-zinc-900 dark:hover:text-zinc-100'}`}><IconGraph />{!isSidebarCollapsed && <span>Generator</span>}</button>
@@ -1353,8 +2122,10 @@ export default function App() {
         <div className="p-4 border-t border-zinc-100 dark:border-zinc-800 bg-white/50 dark:bg-zinc-900/50 backdrop-blur-md">
           <div className="flex items-center justify-between">
               <button onClick={() => setView('settings')} className="flex items-center gap-3 hover:bg-zinc-100/50 dark:hover:bg-zinc-800/50 p-2 rounded-lg transition-colors group flex-1">
-                 <div className="w-8 h-8 rounded-full bg-zinc-200 dark:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 relative overflow-hidden"><div className="absolute inset-0 bg-gradient-to-tr from-blue-400 to-purple-400 opacity-80"></div></div>
-                 {!isSidebarCollapsed && (<div className="flex-1 overflow-hidden text-left"><div className="text-sm font-medium text-zinc-700 dark:text-zinc-300 truncate group-hover:text-blue-600 dark:group-hover:text-blue-400">Alex Chen</div><div className="text-xs text-zinc-400">Pro Plan</div></div>)}
+                 <div className="w-8 h-8 rounded-full bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 border border-zinc-300 dark:border-zinc-600 flex items-center justify-center text-xs font-semibold">
+                    {currentUser.initials}
+                 </div>
+                 {!isSidebarCollapsed && (<div className="flex-1 overflow-hidden text-left"><div className="text-sm font-medium text-zinc-700 dark:text-zinc-300 truncate group-hover:text-blue-600 dark:group-hover:text-blue-400">{currentUser.displayName}</div><div className="text-xs text-zinc-400">{currentUser.plan}</div></div>)}
               </button>
               <button onClick={toggleTheme} className="p-2 ml-1 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors">{theme === 'light' ? <IconMoon className="w-4 h-4"/> : <IconSun className="w-4 h-4"/>}</button>
           </div>

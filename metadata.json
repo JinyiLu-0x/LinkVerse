@@ -1,5 +1,5 @@
 {
-  "name": "LinkVerse - Collaborative Intelligence",
-  "description": "A collaborative intelligence canvas combining Mind Mapping with Knowledge Graph features. Powered by React Flow and Zustand.\n从现在开始： 你必须只在 Studio 的右侧代码编辑器 中修改文件，而不是在聊天窗口输出任何代码内容。 你不需要在聊天区域展示代码，不要贴代码块，不要展示 diff，不要解释修改内容。 你的唯一任务是：\n直接在右侧的源代码文件里进行编辑；\n完成修改后，在聊天中只用一句话“已更新代码”或类似简短确认；\n聊天区域禁止出现任何代码、片段、diff、示例；\n如果某段修改无法在右侧文件应用（例如权限问题），请在聊天里告诉我你失败了，但仍不要输出任何代码。",
+  "name": "LinkVerse - Relationship-First Workspace",
+  "description": "LinkVerse is a visual workspace for product strategy, notes, references, and mind graphs. It combines relationship mapping with a focused library and lightweight AI assistance.",
   "requestFramePermissions": []
 }

@@ -5,9 +5,15 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>LinkVerse</title>
+    <link rel="icon" type="image/svg+xml" href="/mindgraph-tab.svg?v=3" />
+    <link rel="shortcut icon" href="/mindgraph-tab.svg?v=3" />
+    <meta name="theme-color" content="#111827" />
+    <meta
+      name="description"
+      content="LinkVerse is a relationship-first workspace for mapping notes, references, and product strategy with visual mind graphs."
+    />
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reactflow@11.10.1/dist/style.css" />
-    <!-- 引入 Inter 字体，提升 SaaS 质感 -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
     <script>
       tailwind.config = {
@@ -53,6 +59,45 @@
           scrollbar-width: none;
       }
 
+      @keyframes auth-cursor-blink {
+        0%, 49% {
+          opacity: 1;
+        }
+        50%, 100% {
+          opacity: 0;
+        }
+      }
+
+      @keyframes auth-fade-up {
+        from {
+          opacity: 0;
+          transform: translateY(10px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      .auth-cursor {
+        width: 0.62ch;
+        height: 1.02em;
+        margin-left: 0.02em;
+        border-right: 1.5px solid currentColor;
+        opacity: 1;
+        flex-shrink: 0;
+        transform: translateY(0.08em);
+        animation: auth-cursor-blink 1.05s steps(1, end) infinite;
+      }
+
+      .auth-cursor--strong {
+        border-right-width: 2px;
+      }
+
+      .auth-step {
+        animation: auth-fade-up 0.35s ease both;
+      }
+
       /* --- CRITICAL FIX: Clean Gray Edges --- */
       /* Reverted to Gray (Zinc) for cleaner look, straight lines */
       .react-flow__edge-path {
@@ -74,22 +119,6 @@
         stroke-dasharray: 5;
       }
     </style>
-    <script type="importmap">
-{
-  "imports": {
-    "react": "https://esm.sh/react@18.2.0",
-    "react/jsx-runtime": "https://esm.sh/react@18.2.0/jsx-runtime",
-    "react-dom": "https://esm.sh/react-dom@18.2.0",
-    "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
-    "reactflow": "https://esm.sh/reactflow@11.10.1?external=react,react-dom",
-    "zustand": "https://esm.sh/zustand@4.5.0?external=react",
-    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.31.0",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-    "react/": "https://esm.sh/react@^19.2.3/",
-    "zustand/": "https://esm.sh/zustand@^5.0.9/"
-  }
-}
-</script>
   </head>
   <body>
     <div id="root"></div>

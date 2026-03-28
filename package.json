@@ -1,19 +1,25 @@
 {
-  "name": "linkverse---collaborative-intelligence",
+  "name": "linkverse-workspace",
+  "description": "Relationship-first workspace for visual knowledge maps, notes, and research.",
   "private": true,
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node scripts/dev.mjs",
+    "dev:frontend": "vite",
+    "dev:backend": "node backend/server.mjs",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "start": "node backend/server.mjs"
   },
   "dependencies": {
+    "@google/genai": "^1.31.0",
+    "@supabase/supabase-js": "^2.100.1",
+    "pg": "^8.20.0",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "reactflow": "11.10.1",
-    "zustand": "^5.0.9",
-    "@google/genai": "^1.31.0"
+    "zustand": "^5.0.9"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
