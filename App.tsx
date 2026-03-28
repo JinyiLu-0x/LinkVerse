@@ -2426,6 +2426,12 @@ export default function App() {
       setView('dashboard');
   };
 
+  const handleLogoutClick = () => {
+      const shouldLogout = window.confirm('Sign out of this account now?');
+      if (!shouldLogout) return;
+      void handleLogout();
+  };
+
   const handleDelete = (id: string) => {
       if (window.confirm("Are you sure you want to delete this project? This cannot be undone.")) {
           deleteProject(id);
@@ -2512,7 +2518,22 @@ export default function App() {
                  </div>
                  {!isSidebarCollapsed && (<div className="flex-1 overflow-hidden text-left"><div className="text-sm font-medium text-zinc-700 dark:text-zinc-300 truncate group-hover:text-blue-600 dark:group-hover:text-blue-400">{currentUser.displayName}</div><div className="text-xs text-zinc-400">{currentUser.plan}</div></div>)}
               </button>
-              <button onClick={toggleTheme} className="p-2 ml-1 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors">{theme === 'light' ? <IconMoon className="w-4 h-4"/> : <IconSun className="w-4 h-4"/>}</button>
+              <div className="flex items-center gap-1 ml-1">
+                  <button
+                      onClick={toggleTheme}
+                      className="p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
+                      title={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
+                  >
+                      {theme === 'light' ? <IconMoon className="w-4 h-4"/> : <IconSun className="w-4 h-4"/>}
+                  </button>
+                  <button
+                      onClick={handleLogoutClick}
+                      className="p-2 rounded-lg text-zinc-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-300 transition-colors"
+                      title="Sign out"
+                  >
+                      <IconLogOut className="w-4 h-4" />
+                  </button>
+              </div>
           </div>
         </div>
       </div>
