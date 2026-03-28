@@ -590,7 +590,7 @@ const AuthView = ({
                             {showApiStep && (
                                 <AuthField
                                     step="05"
-                                    prompt="Optional: store your API key now"
+                                    prompt="Optional: store your AI key now"
                                     active={!apiKey.trim()}
                                     helper="You can also skip this and fill it later in Settings."
                                 >
@@ -600,7 +600,7 @@ const AuthView = ({
                                             className="w-full px-3 py-3 border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 rounded-xl text-sm"
                                             value={apiKey}
                                             onChange={(e) => setApiKey(e.target.value)}
-                                            placeholder="Gemini API key"
+                                            placeholder="AI API key"
                                             disabled={isSubmitting}
                                         />
                                         <input
@@ -1495,7 +1495,7 @@ const SettingsView = ({ currentUser, onUserChange, onLogout }: { currentUser: Se
                     <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-8">
                         <div className="flex items-start justify-between gap-6 mb-8">
                             <div>
-                                <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">Gemini API Setup</h3>
+                                <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">AI Access Setup</h3>
                                 <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">
                                     Your key is stored with this local test account. Deployment environment variables still work as fallback.
                                 </p>
@@ -1576,7 +1576,7 @@ const SettingsView = ({ currentUser, onUserChange, onLogout }: { currentUser: Se
                                     <input
                                         type={showKey ? 'text' : 'password'}
                                         className="w-full px-3 py-2 border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 rounded-lg text-sm"
-                                        placeholder="Paste your Gemini API key"
+                                        placeholder="Paste your AI API key"
                                         value={apiKey}
                                         onChange={(e) => setApiKey(e.target.value)}
                                         spellCheck={false}
@@ -1633,7 +1633,7 @@ const SettingsView = ({ currentUser, onUserChange, onLogout }: { currentUser: Se
                         <h4 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 mb-3">Current Runtime</h4>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                             <div>
-                                <div className="text-zinc-400 mb-1">Provider</div>
+                                <div className="text-zinc-400 mb-1">Engine</div>
                                 <div className="text-zinc-700 dark:text-zinc-200">{resolvedConfig.providerLabel}</div>
                             </div>
                             <div>

@@ -4,7 +4,7 @@ import {
   updateCurrentUserAISettings,
 } from './auth';
 
-const LOCAL_API_KEY_FALLBACK = 'PASTE_YOUR_GEMINI_API_KEY_HERE';
+const LOCAL_API_KEY_FALLBACK = 'PASTE_YOUR_AI_API_KEY_HERE';
 const DEFAULT_MODEL = 'gemini-2.5-flash';
 
 type StoredAISettings = {
@@ -14,7 +14,7 @@ type StoredAISettings = {
 
 type ResolvedAIConfig = {
   provider: 'gemini';
-  providerLabel: 'Gemini';
+  providerLabel: string;
   model: string;
   apiKey: string;
   localApiKeyFallback: string;
@@ -29,11 +29,11 @@ const runtimeProcessEnv =
 
 export const AI_CONFIG = {
   provider: 'gemini',
-  providerLabel: 'Gemini',
+  providerLabel: 'Integrated AI',
   defaultModel: DEFAULT_MODEL,
   localApiKeyFallback: LOCAL_API_KEY_FALLBACK,
   missingConfigMessage:
-    'AI is not configured yet. Set VITE_AI_API_KEY in .env.local, or keep using your existing GEMINI_API_KEY / API_KEY deployment config.',
+    'AI is not configured yet. Set VITE_AI_API_KEY in .env.local, or keep using your deployment-provided API key.',
 } as const;
 
 export const getStoredAISettings = (): StoredAISettings => {
@@ -73,7 +73,7 @@ export const getResolvedAIConfig = (): ResolvedAIConfig => {
 
   return {
     provider: 'gemini',
-    providerLabel: 'Gemini',
+    providerLabel: AI_CONFIG.providerLabel,
     model: resolvedModel,
     apiKey: resolvedApiKey,
     localApiKeyFallback: LOCAL_API_KEY_FALLBACK,
