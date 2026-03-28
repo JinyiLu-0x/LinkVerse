@@ -12,7 +12,7 @@ import {
   Node,
   Edge
 } from 'reactflow';
-import { MindMapState, MindMapNode, ViewType, Project, ProjectType, ChatMessage, Friend, DirectMessage, Group, Theme, ViewState } from '../types';
+import { MindMapState, MindMapNode, ViewType, Project, ProjectType, ChatMessage, CopilotThread, Friend, DirectMessage, Group, Theme, ViewState } from '../types';
 import type { WorkspaceSnapshot } from '../workspace.types';
 import { GoogleGenAI, FunctionDeclaration, Type } from "@google/genai";
 import { AI_CONFIG, getResolvedAIConfig, hasConfiguredAI } from '../ai.config';
@@ -30,7 +30,7 @@ const STRICT_PALETTE = [
 
 // --- Mock Data ---
 
-const initialSnippets: Project[] = [
+const initialSnippets: Partial<Project>[] = [
   {
     id: 'snip-positioning',
     type: 'note',
@@ -280,7 +280,7 @@ const platformEdges: Edge[] = [
     { id: 'pf-x-2', source: 'pf-graph-3', target: 'pf-rel-1', type: 'straight', style: DASHED_EDGE_STYLE, label: 'autosave' },
 ];
 
-const initialProjects: Project[] = [
+const initialProjects: Partial<Project>[] = [
   {
     id: 'proj-product-narrative',
     type: 'graph',
@@ -368,9 +368,102 @@ const initialDirectMessages: DirectMessage[] = [
     { id: 'dm-3', senderId: 'f1', receiverId: 'me', text: 'Agreed. Let\'s sync later.', timestamp: Date.now() - 8000000 },
 ];
 
-const allProjects = [...initialProjects, ...initialSnippets];
-const starterProjects = allProjects;
 const DEFAULT_VIEW_STATE: ViewState = { x: 0, y: 0, zoom: 1, isMiniMapOpen: true };
+
+const normalizeChatMessage = (message: Partial<ChatMessage> | undefined, index: number): ChatMessage | null => {
+    if (!message || typeof message.text !== 'string' || !message.text.trim()) return null;
+
+    return {
+        id: message.id || `legacy-msg-${index}`,
+        role: message.role === 'user' ? 'user' : 'model',
+        text: message.text,
+        timestamp: typeof message.timestamp === 'number' ? message.timestamp : Date.now() - (index + 1) * 1000,
+    };
+};
+
+const buildThreadTitleFromMessages = (messages: ChatMessage[]) => {
+    const firstUserMessage = messages.find((message) => message.role === 'user' && message.text.trim());
+    if (!firstUserMessage) return 'New chat';
+
+    const compact = firstUserMessage.text.replace(/\s+/g, ' ').trim();
+    if (compact.length <= 42) return compact;
+    return `${compact.slice(0, 39).trimEnd()}...`;
+};
+
+const createCopilotThreadRecord = (partial?: Partial<CopilotThread>): CopilotThread => {
+    const messages = Array.isArray(partial?.messages)
+        ? partial.messages
+            .map((message, index) => normalizeChatMessage(message, index))
+            .filter((message): message is ChatMessage => Boolean(message))
+        : [];
+
+    const createdAt = typeof partial?.createdAt === 'number' ? partial.createdAt : messages[0]?.timestamp || Date.now();
+    const updatedAt = typeof partial?.updatedAt === 'number'
+        ? partial.updatedAt
+        : messages[messages.length - 1]?.timestamp || createdAt;
+
+    return {
+        id: partial?.id || `thread-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        title: typeof partial?.title === 'string' && partial.title.trim() ? partial.title : buildThreadTitleFromMessages(messages),
+        createdAt,
+        updatedAt,
+        messages,
+    };
+};
+
+const createEmptyCopilotThread = (projectTitle?: string): CopilotThread =>
+    createCopilotThreadRecord({
+        title: projectTitle ? `${projectTitle} chat` : 'New chat',
+        messages: [],
+    });
+
+const ensureProjectThreads = (project: Partial<Project>) => {
+    const normalizedThreads = Array.isArray(project.copilotThreads)
+        ? project.copilotThreads.map((thread) => createCopilotThreadRecord(thread))
+        : [];
+
+    if (normalizedThreads.length > 0) {
+        return normalizedThreads;
+    }
+
+    const legacyMessages = Array.isArray(project.chatHistory)
+        ? project.chatHistory
+            .map((message, index) => normalizeChatMessage(message, index))
+            .filter((message): message is ChatMessage => Boolean(message))
+        : [];
+
+    if (legacyMessages.length > 0) {
+        return [
+            createCopilotThreadRecord({
+                title: buildThreadTitleFromMessages(legacyMessages),
+                messages: legacyMessages,
+            }),
+        ];
+    }
+
+    return [createEmptyCopilotThread(project.title)];
+};
+
+const getActiveThreadId = (project: Partial<Project>, threads: CopilotThread[]) => {
+    const preferredId = typeof project.activeCopilotThreadId === 'string' ? project.activeCopilotThreadId : null;
+    return threads.some((thread) => thread.id === preferredId) ? preferredId : threads[0]?.id || null;
+};
+
+const getThreadMessages = (threads: CopilotThread[], activeThreadId: string | null) =>
+    threads.find((thread) => thread.id === activeThreadId)?.messages || [];
+
+const syncProjectCopilotState = (project: Project, threads: CopilotThread[], activeThreadId: string | null): Project => ({
+    ...project,
+    copilotThreads: threads,
+    activeCopilotThreadId: activeThreadId,
+    chatHistory: getThreadMessages(threads, activeThreadId),
+});
+
+const updateThreadCollection = (
+    threads: CopilotThread[],
+    threadId: string,
+    updater: (thread: CopilotThread) => CopilotThread
+) => threads.map((thread) => (thread.id === threadId ? updater(thread) : thread));
 
 const normalizeProject = (project: Partial<Project> | undefined, index: number): Project | null => {
     if (!project) return null;
@@ -396,6 +489,9 @@ const normalizeProject = (project: Partial<Project> | undefined, index: number):
         }
         : DEFAULT_VIEW_STATE;
 
+    const copilotThreads = ensureProjectThreads(project);
+    const activeCopilotThreadId = getActiveThreadId(project, copilotThreads);
+
     return {
         id: project.id || `legacy-project-${index}`,
         type: inferredType,
@@ -409,12 +505,20 @@ const normalizeProject = (project: Partial<Project> | undefined, index: number):
         content: typeof project.content === 'string' ? project.content : '',
         url: typeof project.url === 'string' ? project.url : undefined,
         summary: typeof project.summary === 'string' ? project.summary : '',
-        chatHistory: Array.isArray(project.chatHistory) ? project.chatHistory : [],
+        chatHistory: getThreadMessages(copilotThreads, activeCopilotThreadId),
+        copilotThreads,
+        activeCopilotThreadId,
     };
 };
 
+const starterProjects = [...initialProjects, ...initialSnippets]
+    .map((project, index) => normalizeProject(project, index))
+    .filter((project): project is Project => Boolean(project));
+
+const allProjects = starterProjects;
+
 const allTags = new Set([
-    ...allProjects.flatMap(p => p.databaseTags),
+    ...starterProjects.flatMap(p => p.databaseTags),
     'Graphs'
 ]);
 
@@ -501,6 +605,230 @@ const cleanJsonOutput = (text: string) => {
     cleaned = cleaned.replace(/^```\s*/, '').replace(/\s*```$/, '');
   }
   return cleaned;
+};
+
+const containsCJK = (text: string) => /[\u4e00-\u9fff]/.test(text);
+
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const isExplanationRequest = (text: string) =>
+  /什么意思|啥意思|含义|怎么理解|解释|说明|看不懂|看懂|读一下|read this|explain|meaning|understand|interpret|summari[sz]e/i.test(
+    text
+  );
+
+const isUnsupportedEditRequest = (text: string) =>
+  /删|删除|去掉|移除|remove|delete|rename|重命名|move|移动|拖到|拖去/i.test(text);
+
+const isSupportedToolRequest = (text: string) =>
+  /加|添加|新增|补充|扩展|拓展|connect|连接|link|layout|布局|sync|同步|refresh|刷新|update the graph|expand/i.test(
+    text
+  );
+
+const shouldExposeGraphTools = (text: string) => {
+  if (isExplanationRequest(text) || isUnsupportedEditRequest(text)) {
+    return false;
+  }
+  return isSupportedToolRequest(text);
+};
+
+const findMentionedNodeLabels = (text: string, nodes: MindMapNode[]) => {
+  const normalized = text.toLowerCase();
+  return nodes
+    .map((node) => node.data.label?.trim())
+    .filter((label): label is string => Boolean(label))
+    .filter((label) => {
+      const labelLower = label.toLowerCase();
+      return normalized.includes(labelLower) || new RegExp(`\\b${escapeRegExp(labelLower)}\\b`, 'i').test(normalized);
+    })
+    .slice(0, 3);
+};
+
+const buildGraphContext = (project: Project, nodes: MindMapNode[], edges: Edge[]) => {
+  const outgoingCount = new Map<string, number>();
+  const incomingCount = new Map<string, number>();
+
+  nodes.forEach((node) => {
+    outgoingCount.set(node.id, 0);
+    incomingCount.set(node.id, 0);
+  });
+
+  edges.forEach((edge) => {
+    outgoingCount.set(edge.source, (outgoingCount.get(edge.source) || 0) + 1);
+    incomingCount.set(edge.target, (incomingCount.get(edge.target) || 0) + 1);
+  });
+
+  const sortedRoots = [...nodes].sort((a, b) => {
+    const aRootScore = a.data.nodeType === 'root' ? 2 : a.data.nodeType === 'category' ? 1 : 0;
+    const bRootScore = b.data.nodeType === 'root' ? 2 : b.data.nodeType === 'category' ? 1 : 0;
+    if (aRootScore !== bRootScore) return bRootScore - aRootScore;
+    return (outgoingCount.get(b.id) || 0) - (outgoingCount.get(a.id) || 0);
+  });
+
+  const likelyRoot = sortedRoots[0];
+
+  const nodeLines = nodes.map((node) => {
+    const parts = [
+      `- ${node.data.label} (ID: ${node.id})`,
+      `type=${node.data.nodeType || 'petal'}`,
+      `out=${outgoingCount.get(node.id) || 0}`,
+      `in=${incomingCount.get(node.id) || 0}`,
+    ];
+
+    if (node.data.source) parts.push(`source=${node.data.source}`);
+    if (node.data.summary) parts.push(`summary=${node.data.summary}`);
+    return parts.join(', ');
+  });
+
+  const edgeLines = edges.map((edge) => {
+    const sourceLabel = nodes.find((node) => node.id === edge.source)?.data.label || edge.source;
+    const targetLabel = nodes.find((node) => node.id === edge.target)?.data.label || edge.target;
+    return `- ${sourceLabel} -> ${targetLabel}`;
+  });
+
+  return [
+    `Project: ${project.title}`,
+    `Node count: ${nodes.length}`,
+    `Edge count: ${edges.length}`,
+    `Likely root: ${likelyRoot?.data.label || project.title}`,
+    'Nodes:',
+    nodeLines.length > 0 ? nodeLines.join('\n') : '- none',
+    'Edges:',
+    edgeLines.length > 0 ? edgeLines.join('\n') : '- none',
+  ].join('\n');
+};
+
+const buildExplanationFallback = (project: Project, nodes: MindMapNode[], edges: Edge[], userText: string) => {
+  const prefersChinese = containsCJK(userText);
+  if (nodes.length === 0) {
+    return prefersChinese
+      ? '这张图现在还是空的，所以还读不出明确结构。你可以先加一个中心主题，我再帮你拆主线和分支。'
+      : 'This graph is still empty, so there is not much to interpret yet. Add a central topic and I can help read the structure.';
+  }
+
+  const nodeMap = new Map(nodes.map((node) => [node.id, node]));
+  const incomingCount = new Map<string, number>();
+  const childrenMap = new Map<string, MindMapNode[]>();
+
+  nodes.forEach((node) => {
+    incomingCount.set(node.id, 0);
+    childrenMap.set(node.id, []);
+  });
+
+  edges.forEach((edge) => {
+    incomingCount.set(edge.target, (incomingCount.get(edge.target) || 0) + 1);
+    const sourceChildren = childrenMap.get(edge.source);
+    const targetNode = nodeMap.get(edge.target);
+    if (sourceChildren && targetNode) {
+      sourceChildren.push(targetNode);
+    }
+  });
+
+  const rankedNodes = [...nodes].sort((a, b) => {
+    const aRank = a.data.nodeType === 'root' ? 2 : a.data.nodeType === 'category' ? 1 : 0;
+    const bRank = b.data.nodeType === 'root' ? 2 : b.data.nodeType === 'category' ? 1 : 0;
+    if (aRank !== bRank) return bRank - aRank;
+    return (childrenMap.get(b.id)?.length || 0) - (childrenMap.get(a.id)?.length || 0);
+  });
+  const root = rankedNodes.find((node) => (incomingCount.get(node.id) || 0) === 0) || rankedNodes[0];
+  const primaryBranches = (childrenMap.get(root.id) || [])
+    .slice()
+    .sort((a, b) => (childrenMap.get(b.id)?.length || 0) - (childrenMap.get(a.id)?.length || 0))
+    .slice(0, 4);
+
+  if (prefersChinese) {
+    const intro = `这张图主要在讲「${root.data.label || project.title}」：它把主题拆成几个关键分支，方便你从中心主题一路看到支撑点和细项。`;
+    const branchLines =
+      primaryBranches.length > 0
+        ? primaryBranches.map((branch) => {
+            const leaves = (childrenMap.get(branch.id) || [])
+              .slice(0, 3)
+              .map((leaf) => leaf.data.label)
+              .filter(Boolean);
+            return leaves.length > 0
+              ? `- 「${branch.data.label}」是一个主分支，下面展开到 ${leaves.join('、')}。`
+              : `- 「${branch.data.label}」是一个主分支，目前还没继续细拆。`;
+          })
+        : ['- 这张图目前更像一个单层主题图，主分支还不多。'];
+
+    const closing =
+      edges.length === 0
+        ? '现在节点之间还没有明显关系线，所以更像主题收集，而不是完整论证。'
+        : '整体上，它已经有“中心主题 -> 主分支 -> 细项”的阅读路径了。';
+
+    return [intro, '', ...branchLines, '', closing].join('\n');
+  }
+
+  const intro = `This graph is mainly about "${root.data.label || project.title}": it breaks the topic into a few key branches so the main idea and supporting details are readable at a glance.`;
+  const branchLines =
+    primaryBranches.length > 0
+      ? primaryBranches.map((branch) => {
+          const leaves = (childrenMap.get(branch.id) || [])
+            .slice(0, 3)
+            .map((leaf) => leaf.data.label)
+            .filter(Boolean);
+          return leaves.length > 0
+            ? `- "${branch.data.label}" is a main branch with details like ${leaves.join(', ')}.`
+            : `- "${branch.data.label}" is a main branch that has not been expanded yet.`;
+        })
+      : ['- The graph is still fairly shallow, with only a small number of branches so far.'];
+
+  const closing =
+    edges.length === 0
+      ? 'Right now it reads more like a topic collection than a finished argument because there are no visible relationships yet.'
+      : 'Overall it already has a clear center -> branch -> detail reading path.';
+
+  return [intro, '', ...branchLines, '', closing].join('\n');
+};
+
+const buildUnsupportedEditFallback = (userText: string, nodes: MindMapNode[]) => {
+  const prefersChinese = containsCJK(userText);
+  const mentionedLabels = findMentionedNodeLabels(userText, nodes);
+  const targetText =
+    mentionedLabels.length > 0
+      ? prefersChinese
+        ? `我理解你是想处理「${mentionedLabels.join(' / ')}」这个节点或分支。`
+        : `I understand you want to edit the "${mentionedLabels.join(' / ')}" node or branch.`
+      : prefersChinese
+        ? '我理解你是想直接改这张图里的某个节点或分支。'
+        : 'I understand you want to directly edit a node or branch in this graph.';
+
+  if (prefersChinese) {
+    return `${targetText}\n\n我现在还不能直接通过聊天删点或改名，但我可以先帮你判断哪些内容该删、该并、该保留。\n\n- 手动删除：选中节点后按 Delete / Backspace\n- 或者点节点浮层里的垃圾桶`;
+  }
+
+  return `${targetText}\n\nI cannot delete or rename nodes directly from chat yet, but I can help decide what should be removed, merged, or kept.\n\n- Delete manually: select the node and press Delete / Backspace\n- Or use the trash button in the node popover`;
+};
+
+const isLowSignalCopilotReply = (replyText: string) =>
+  /i cannot fulfill this request|available tools do not have|i cannot directly understand this graph|我无法直接理解这张图|我不能完成这个请求|没有.*delete/i.test(
+    replyText.trim()
+  );
+
+const buildCopilotPrompt = (userText: string, context: string, toolsEnabled: boolean) => {
+  const prefersChinese = containsCJK(userText);
+  const languageInstruction = prefersChinese ? '请用简体中文回答。' : 'Reply in English.';
+  const toolInstruction = toolsEnabled
+    ? 'Use tools only when the user is clearly asking you to change the graph.'
+    : 'Do not call tools for this request. Answer directly.';
+
+  return `
+You are LinkVerse Workspace Copilot, a sharp and helpful assistant for reading and improving mind graphs.
+${languageInstruction}
+
+Behavior rules:
+1. If the user asks what a graph means, explain it confidently from the current nodes and edges. Never say you cannot understand the graph.
+2. Start with the whole-picture reading, then break down the most important branches or tensions.
+3. If the request is not directly editable from chat, do not blame internal tools or capabilities. Briefly explain the limitation, then offer the closest helpful guidance or manual step.
+4. Keep the tone concise, thoughtful, and product-savvy rather than robotic.
+5. Use clean Markdown with short paragraphs and flat bullet lists when it improves readability. Use **bold** only for key terms. Avoid tables unless the user explicitly asks for one.
+6. ${toolInstruction}
+
+Workspace context:
+${context}
+
+User request:
+${userText}
+`.trim();
 };
 
 // --- TOOL DECLARATIONS FOR AGENT ---
@@ -633,6 +961,8 @@ export const useStore = create<StoreState>()(
       edges: [],
       activeProjectContent: '',
       chatMessages: [],
+      copilotThreads: [],
+      activeCopilotThreadId: null,
 
       activeGraphFilters: [],
       toggleGraphFilter: (tag) => set(state => {
@@ -655,6 +985,8 @@ export const useStore = create<StoreState>()(
               edges: [],
               activeProjectContent: '',
               chatMessages: [],
+              copilotThreads: [],
+              activeCopilotThreadId: null,
               currentView: 'dashboard',
               activeGraphFilters: []
           });
@@ -834,12 +1166,16 @@ export const useStore = create<StoreState>()(
               if (n.data.source) sources.add(n.data.source);
           });
 
+          const activeThreadId = getActiveThreadId(project, project.copilotThreads);
+
           set({
             activeProjectId: projectId,
             nodes: project.nodes,
             edges: project.edges,
             activeProjectContent: project.content || '',
-            chatMessages: project.chatHistory || [],
+            chatMessages: getThreadMessages(project.copilotThreads, activeThreadId),
+            copilotThreads: project.copilotThreads,
+            activeCopilotThreadId: activeThreadId,
             currentView: 'editor',
             activeGraphFilters: Array.from(sources)
           });
@@ -857,6 +1193,7 @@ export const useStore = create<StoreState>()(
 
       createProject: async (title: string, type: ProjectType, url?: string) => {
         const newId = `proj-${Date.now()}`;
+        const defaultThread = createEmptyCopilotThread(title || 'Untitled Project');
         
         // Graph projects default to 'Graphs' database, others to 'Inbox'
         const defaultTags = type === 'graph' ? ['Graphs'] : ['Inbox'];
@@ -870,6 +1207,8 @@ export const useStore = create<StoreState>()(
           nodes: [],
           edges: [],
           chatHistory: [],
+          copilotThreads: [defaultThread],
+          activeCopilotThreadId: defaultThread.id,
           content: '',
           url: url || undefined,
           unsavedChanges: false,
@@ -896,6 +1235,8 @@ export const useStore = create<StoreState>()(
           edges: newProject.edges,
           activeProjectContent: newProject.content || '',
           chatMessages: [],
+          copilotThreads: newProject.copilotThreads,
+          activeCopilotThreadId: newProject.activeCopilotThreadId,
           availableTags: Array.from(new Set([...state.availableTags, ...defaultTags])),
           currentView: 'editor',
           activeGraphFilters: [] // Default for new graph
@@ -920,7 +1261,68 @@ export const useStore = create<StoreState>()(
       deleteProject: (projectId: string) => {
           set(state => ({
               projects: state.projects.filter(p => p.id !== projectId),
-              ...(state.activeProjectId === projectId ? { activeProjectId: null, currentView: 'dashboard' } : {})
+              ...(state.activeProjectId === projectId ? {
+                  activeProjectId: null,
+                  currentView: 'dashboard',
+                  chatMessages: [],
+                  copilotThreads: [],
+                  activeCopilotThreadId: null,
+              } : {})
+          }));
+      },
+
+      createCopilotThread: () => {
+          const { activeProjectId, projects } = get();
+          if (!activeProjectId) return;
+
+          const project = projects.find((item) => item.id === activeProjectId);
+          if (!project) return;
+
+          const newThread = createEmptyCopilotThread(project.title);
+          const nextThreads = [newThread, ...project.copilotThreads];
+          const nextProject = syncProjectCopilotState(project, nextThreads, newThread.id);
+
+          set(state => ({
+              projects: state.projects.map((item) => item.id === activeProjectId ? nextProject : item),
+              copilotThreads: nextThreads,
+              activeCopilotThreadId: newThread.id,
+              chatMessages: [],
+          }));
+      },
+
+      openCopilotThread: (threadId: string) => {
+          const { activeProjectId, projects } = get();
+          if (!activeProjectId) return;
+
+          const project = projects.find((item) => item.id === activeProjectId);
+          if (!project || !project.copilotThreads.some((thread) => thread.id === threadId)) return;
+
+          const nextProject = syncProjectCopilotState(project, project.copilotThreads, threadId);
+          set(state => ({
+              projects: state.projects.map((item) => item.id === activeProjectId ? nextProject : item),
+              copilotThreads: project.copilotThreads,
+              activeCopilotThreadId: threadId,
+              chatMessages: getThreadMessages(project.copilotThreads, threadId),
+          }));
+      },
+
+      deleteCopilotThread: (threadId: string) => {
+          const { activeProjectId, projects } = get();
+          if (!activeProjectId) return;
+
+          const project = projects.find((item) => item.id === activeProjectId);
+          if (!project) return;
+
+          const remainingThreads = project.copilotThreads.filter((thread) => thread.id !== threadId);
+          const nextThreads = remainingThreads.length > 0 ? remainingThreads : [createEmptyCopilotThread(project.title)];
+          const nextActiveThreadId = nextThreads[0]?.id || null;
+          const nextProject = syncProjectCopilotState(project, nextThreads, nextActiveThreadId);
+
+          set(state => ({
+              projects: state.projects.map((item) => item.id === activeProjectId ? nextProject : item),
+              copilotThreads: nextThreads,
+              activeCopilotThreadId: nextActiveThreadId,
+              chatMessages: getThreadMessages(nextThreads, nextActiveThreadId),
           }));
       },
 
@@ -1133,6 +1535,7 @@ export const useStore = create<StoreState>()(
         if (!node) return;
 
         const newId = `snip-${Date.now()}`;
+        const defaultThread = createEmptyCopilotThread(node.data.label || 'Saved Snippet');
         const newSnippet: Project = {
             id: newId,
             type: 'note',
@@ -1140,7 +1543,7 @@ export const useStore = create<StoreState>()(
             content: `**Source**: Mind Map Node (${node.data.source || 'Unknown'})\n**Summary**: ${node.data.summary || 'N/A'}\n\n${node.data.url ? `Link: ${node.data.url}` : ''}`,
             updatedAt: 'Just now',
             databaseTags: ['Inbox', ...(node.data.aiTags || []), ...(node.data.source ? [node.data.source] : [])],
-            nodes: [], edges: [], chatHistory: [],
+            nodes: [], edges: [], chatHistory: [], copilotThreads: [defaultThread], activeCopilotThreadId: defaultThread.id,
             unsavedChanges: false,
             viewState: { x: 0, y: 0, zoom: 1, isMiniMapOpen: true }
         };
@@ -1604,6 +2007,7 @@ export const useStore = create<StoreState>()(
             // --- Graph Independence ---
             // Created in "Graphs" database by default, plus references source tags
             const newDatabaseTags = ['Graphs', ...selectedTags]; 
+            const defaultThread = createEmptyCopilotThread(result.title || `Neural Graph: ${selectedTags.join('+')}`);
 
             const newProject: Project = {
                 id: newId,
@@ -1614,6 +2018,8 @@ export const useStore = create<StoreState>()(
                 nodes: nodesWithPos,
                 edges: edges,
                 chatHistory: [],
+                copilotThreads: [defaultThread],
+                activeCopilotThreadId: defaultThread.id,
                 content: '',
                 unsavedChanges: true,
                 viewState: { x: 0, y: 0, zoom: 1, isMiniMapOpen: true }
@@ -1631,6 +2037,8 @@ export const useStore = create<StoreState>()(
                     edges: edges,
                     activeProjectContent: '',
                     chatMessages: [],
+                    copilotThreads: newProject.copilotThreads,
+                    activeCopilotThreadId: newProject.activeCopilotThreadId,
                     availableTags: updatedAvailableTags,
                     currentView: 'editor',
                     activeGraphFilters: Array.from(sources)
@@ -1652,27 +2060,70 @@ export const useStore = create<StoreState>()(
       },
 
       sendAgentMessage: async (text: string) => {
-          const { activeProjectId, projects, nodes, activeProjectContent, addNode, updateGraphLayout, syncGraph } = get();
+          const { activeProjectId, projects, nodes, edges, activeProjectContent, addNode, updateGraphLayout, syncGraph } = get();
           const project = projects.find(p => p.id === activeProjectId);
           if (!project) return;
 
+          const appendMessageToActiveThread = (message: ChatMessage) => {
+              set(state => {
+                  const currentProject = state.projects.find(p => p.id === activeProjectId);
+                  if (!currentProject) {
+                      return { chatMessages: [...state.chatMessages, message] };
+                  }
+
+                  const existingThreads = currentProject.copilotThreads.length > 0
+                      ? currentProject.copilotThreads
+                      : [createEmptyCopilotThread(currentProject.title)];
+                  const resolvedThreadId =
+                      state.activeCopilotThreadId && existingThreads.some(thread => thread.id === state.activeCopilotThreadId)
+                          ? state.activeCopilotThreadId
+                          : existingThreads[0]?.id || null;
+
+                  if (!resolvedThreadId) {
+                      return { chatMessages: [...state.chatMessages, message] };
+                  }
+
+                  const nextThreads = updateThreadCollection(existingThreads, resolvedThreadId, thread => {
+                      const nextMessages = [...thread.messages, message];
+                      const nextTitle =
+                          thread.messages.length === 0 && message.role === 'user'
+                              ? buildThreadTitleFromMessages(nextMessages)
+                              : thread.title;
+
+                      return {
+                          ...thread,
+                          title: nextTitle,
+                          messages: nextMessages,
+                          updatedAt: message.timestamp,
+                      };
+                  });
+
+                  const nextProject = syncProjectCopilotState(currentProject, nextThreads, resolvedThreadId);
+
+                  return {
+                      chatMessages: nextProject.chatHistory,
+                      copilotThreads: nextThreads,
+                      activeCopilotThreadId: resolvedThreadId,
+                      projects: state.projects.map(p => p.id === activeProjectId ? nextProject : p),
+                  };
+              });
+          };
+
           const newUserMsg: ChatMessage = { id: `msg-${Date.now()}`, role: 'user', text, timestamp: Date.now() };
-          
-          set(state => ({
-              chatMessages: [...state.chatMessages, newUserMsg],
-              projects: state.projects.map(p => p.id === activeProjectId ? { ...p, chatHistory: [...(p.chatHistory || []), newUserMsg] } : p)
-          }));
+          appendMessageToActiveThread(newUserMsg);
 
           try {
               let context = "";
-              const toolsList = [];
+              let toolsList: FunctionDeclaration[] = [];
+              const exposeGraphTools = project.type === 'graph' ? shouldExposeGraphTools(text) : false;
               
               if (project.type === 'graph') {
-                  const nodeLabels = nodes.map(n => `- ${n.data.label} (ID: ${n.id})`).join('\n');
-                  context = `Current Graph Nodes:\n${nodeLabels}\n\nTask: Use tools to modify the graph based on user request.`;
-                  toolsList.push(addNodeTool, connectNodesTool, changeLayoutTool, syncGraphTool);
+                  context = buildGraphContext(project, nodes, edges);
+                  if (exposeGraphTools) {
+                      toolsList = [addNodeTool, connectNodesTool, changeLayoutTool, syncGraphTool];
+                  }
               } else {
-                  context = "Simple chat mode.";
+                  context = `Project: ${project.title}\nContent:\n${activeProjectContent || 'No content yet.'}`;
               }
 
               const ai = getAIClient();
@@ -1684,15 +2135,15 @@ export const useStore = create<StoreState>()(
                       text: AI_CONFIG.missingConfigMessage,
                       timestamp: Date.now()
                   };
-                  set(state => ({ chatMessages: [...state.chatMessages, errorMsg] }));
+                  appendMessageToActiveThread(errorMsg);
                   return;
               }
               const response = await ai.models.generateContent({
                   model: getResolvedAIConfig().model,
-                  contents: `Context:\n${context}\n\nUser: ${text}`,
-                  config: { 
-                      tools: [{ functionDeclarations: toolsList }],
-                  }
+                  contents: buildCopilotPrompt(text, context, toolsList.length > 0),
+                  config: toolsList.length > 0
+                      ? { tools: [{ functionDeclarations: toolsList }] }
+                      : undefined
               });
 
               // Handle Function Calls
@@ -1727,7 +2178,15 @@ export const useStore = create<StoreState>()(
                   }
               }
 
-              if(!replyText) replyText = "Action completed.";
+              if (project.type === 'graph' && (!replyText || isLowSignalCopilotReply(replyText))) {
+                  if (isExplanationRequest(text)) {
+                      replyText = buildExplanationFallback(project, nodes, edges, text);
+                  } else if (isUnsupportedEditRequest(text)) {
+                      replyText = buildUnsupportedEditFallback(text, nodes);
+                  }
+              }
+
+              if(!replyText) replyText = containsCJK(text) ? "我已经处理好了。" : "Action completed.";
 
               const newModelMsg: ChatMessage = {
                   id: `msg-ai-${Date.now()}`,
@@ -1736,15 +2195,12 @@ export const useStore = create<StoreState>()(
                   timestamp: Date.now()
               };
 
-              set(state => ({
-                  chatMessages: [...state.chatMessages, newModelMsg],
-                  projects: state.projects.map(p => p.id === activeProjectId ? { ...p, chatHistory: [...(p.chatHistory || []), newModelMsg] } : p)
-              }));
+              appendMessageToActiveThread(newModelMsg);
 
           } catch (e) {
               console.error(e);
               const errorMsg: ChatMessage = { id: `err-${Date.now()}`, role: 'model', text: "I couldn't perform that action.", timestamp: Date.now() };
-              set(state => ({ chatMessages: [...state.chatMessages, errorMsg] }));
+              appendMessageToActiveThread(errorMsg);
           }
       }
     }),

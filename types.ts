@@ -20,6 +20,14 @@ export type ChatMessage = {
   timestamp: number;
 };
 
+export type CopilotThread = {
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  messages: ChatMessage[];
+};
+
 export type Friend = {
   id: string;
   name: string;
@@ -81,6 +89,8 @@ export type Project = {
   
   // Contextual Chat History
   chatHistory: ChatMessage[];
+  copilotThreads: CopilotThread[];
+  activeCopilotThreadId: string | null;
 };
 
 export type AIAssistantData = {
@@ -124,6 +134,8 @@ export interface MindMapState {
   edges: Edge[];
   activeProjectContent: string; // For Notes
   chatMessages: ChatMessage[];  // Current active chat
+  copilotThreads: CopilotThread[];
+  activeCopilotThreadId: string | null;
   
   // --- Graph Visibility State ---
   activeGraphFilters: string[]; // List of visible database sources
@@ -180,6 +192,9 @@ export interface MindMapState {
   generateGraphFromDatabases: (selectedTags: string[]) => Promise<void>;
   sendAgentMessage: (text: string) => Promise<void>;
   syncGraph: (projectId: string) => Promise<void>; // Updated: Global sync
+  createCopilotThread: () => void;
+  openCopilotThread: (threadId: string) => void;
+  deleteCopilotThread: (threadId: string) => void;
   
   updateGraphLayout: (edgeType: 'straight' | 'default') => void;
 }

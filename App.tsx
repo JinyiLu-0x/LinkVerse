@@ -17,7 +17,7 @@ import {
 } from './store/useStore';
 import BrandLogo from './components/BrandLogo';
 import MindNode from './components/MindNode';
-import { ProjectType, Friend } from './types';
+import { ProjectType, CopilotThread, Friend } from './types';
 import {
   AI_CONFIG,
   clearStoredAISettings,
@@ -190,6 +190,210 @@ const AuthField = ({
         {helper && <p className="mt-2 text-xs text-zinc-400">{helper}</p>}
     </div>
 );
+
+const markdownTokenPattern =
+    /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)|`([^`]+)`|\*\*([^*]+)\*\*|\*([^*]+)\*/g;
+
+const renderInlineMarkdown = (text: string) => {
+    const nodes: React.ReactNode[] = [];
+    let lastIndex = 0;
+    let key = 0;
+
+    for (const match of text.matchAll(markdownTokenPattern)) {
+        const matchIndex = match.index ?? 0;
+
+        if (matchIndex > lastIndex) {
+            nodes.push(text.slice(lastIndex, matchIndex));
+        }
+
+        if (match[1] && match[2]) {
+            nodes.push(
+                <a
+                    key={`md-link-${key++}`}
+                    href={match[2]}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="font-medium text-indigo-600 underline decoration-indigo-200 underline-offset-4 transition-colors hover:text-indigo-500 dark:text-indigo-300 dark:decoration-indigo-500/40"
+                >
+                    {match[1]}
+                </a>
+            );
+        } else if (match[3]) {
+            nodes.push(
+                <code
+                    key={`md-code-${key++}`}
+                    className="rounded-md bg-zinc-950 px-1.5 py-0.5 font-mono text-[11px] text-zinc-100 dark:bg-zinc-800 dark:text-zinc-200"
+                >
+                    {match[3]}
+                </code>
+            );
+        } else if (match[4]) {
+            nodes.push(
+                <strong
+                    key={`md-strong-${key++}`}
+                    className="font-semibold text-zinc-950 dark:text-white"
+                >
+                    {match[4]}
+                </strong>
+            );
+        } else if (match[5]) {
+            nodes.push(
+                <em key={`md-em-${key++}`} className="italic text-zinc-700 dark:text-zinc-200">
+                    {match[5]}
+                </em>
+            );
+        }
+
+        lastIndex = matchIndex + match[0].length;
+    }
+
+    if (lastIndex < text.length) {
+        nodes.push(text.slice(lastIndex));
+    }
+
+    return nodes.length > 0 ? nodes : text;
+};
+
+const ChatMarkdown = ({ content }: { content: string }) => {
+    const lines = content.replace(/\r/g, '').split('\n');
+    const blocks: React.ReactNode[] = [];
+    let cursor = 0;
+    let key = 0;
+
+    const isBulletLine = (line: string) => /^[-*]\s+/.test(line);
+    const isNumberedLine = (line: string) => /^\d+\.\s+/.test(line);
+    const isHeadingLine = (line: string) => /^#{1,3}\s+/.test(line);
+    const isQuoteLine = (line: string) => /^>\s?/.test(line);
+    const isBlockStart = (line: string) =>
+        isBulletLine(line) || isNumberedLine(line) || isHeadingLine(line) || isQuoteLine(line);
+
+    while (cursor < lines.length) {
+        const currentLine = lines[cursor];
+        const trimmed = currentLine.trim();
+
+        if (!trimmed) {
+            cursor += 1;
+            continue;
+        }
+
+        if (isHeadingLine(trimmed)) {
+            const level = Math.min((trimmed.match(/^#+/)?.[0].length || 1), 3);
+            const text = trimmed.replace(/^#{1,3}\s+/, '');
+            const headingClass =
+                level === 1
+                    ? 'text-sm font-semibold tracking-tight text-zinc-950 dark:text-white'
+                    : level === 2
+                      ? 'text-[13px] font-semibold text-zinc-900 dark:text-zinc-100'
+                      : 'text-[12px] font-semibold uppercase tracking-[0.14em] text-zinc-500 dark:text-zinc-400';
+
+            blocks.push(
+                <h4 key={`md-heading-${key++}`} className={headingClass}>
+                    {renderInlineMarkdown(text)}
+                </h4>
+            );
+            cursor += 1;
+            continue;
+        }
+
+        if (isBulletLine(trimmed)) {
+            const items: string[] = [];
+            while (cursor < lines.length && isBulletLine(lines[cursor].trim())) {
+                items.push(lines[cursor].trim().replace(/^[-*]\s+/, ''));
+                cursor += 1;
+            }
+
+            blocks.push(
+                <ul key={`md-ul-${key++}`} className="space-y-2 pl-5 text-[13px] leading-6 text-zinc-700 dark:text-zinc-200 list-disc marker:text-zinc-400 dark:marker:text-zinc-500">
+                    {items.map((item, itemIndex) => (
+                        <li key={`md-ul-item-${itemIndex}`}>{renderInlineMarkdown(item)}</li>
+                    ))}
+                </ul>
+            );
+            continue;
+        }
+
+        if (isNumberedLine(trimmed)) {
+            const items: string[] = [];
+            while (cursor < lines.length && isNumberedLine(lines[cursor].trim())) {
+                items.push(lines[cursor].trim().replace(/^\d+\.\s+/, ''));
+                cursor += 1;
+            }
+
+            blocks.push(
+                <ol key={`md-ol-${key++}`} className="space-y-2 pl-5 text-[13px] leading-6 text-zinc-700 dark:text-zinc-200 list-decimal marker:text-zinc-400 dark:marker:text-zinc-500">
+                    {items.map((item, itemIndex) => (
+                        <li key={`md-ol-item-${itemIndex}`}>{renderInlineMarkdown(item)}</li>
+                    ))}
+                </ol>
+            );
+            continue;
+        }
+
+        if (isQuoteLine(trimmed)) {
+            const quoteLines: string[] = [];
+            while (cursor < lines.length && isQuoteLine(lines[cursor].trim())) {
+                quoteLines.push(lines[cursor].trim().replace(/^>\s?/, ''));
+                cursor += 1;
+            }
+
+            blocks.push(
+                <blockquote
+                    key={`md-quote-${key++}`}
+                    className="border-l-2 border-zinc-200 pl-4 text-[13px] leading-6 text-zinc-600 dark:border-zinc-700 dark:text-zinc-300"
+                >
+                    {renderInlineMarkdown(quoteLines.join(' '))}
+                </blockquote>
+            );
+            continue;
+        }
+
+        const paragraphLines: string[] = [];
+        while (cursor < lines.length) {
+            const paragraphLine = lines[cursor];
+            if (!paragraphLine.trim()) {
+                break;
+            }
+            if (paragraphLines.length > 0 && isBlockStart(paragraphLine.trim())) {
+                break;
+            }
+            paragraphLines.push(paragraphLine.trim());
+            cursor += 1;
+        }
+
+        blocks.push(
+            <p key={`md-p-${key++}`} className="text-[13px] leading-6 text-zinc-700 dark:text-zinc-200">
+                {renderInlineMarkdown(paragraphLines.join(' '))}
+            </p>
+        );
+    }
+
+    return <div className="space-y-3">{blocks}</div>;
+};
+
+const formatCopilotThreadTime = (timestamp: number) =>
+    new Date(timestamp).toLocaleString([], {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+    });
+
+const buildCopilotShareText = (projectTitle: string, thread: CopilotThread) => {
+    const transcript = thread.messages
+        .map((message) => {
+            const speaker = message.role === 'user' ? 'You' : 'Copilot';
+            const time = new Date(message.timestamp).toLocaleString([], {
+                month: 'short',
+                day: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit',
+            });
+            return `**${speaker}** (${time})\n${message.text}`;
+        })
+        .join('\n\n');
+
+    return `# ${projectTitle}\n\n## ${thread.title}\n\n${transcript}`;
+};
 
 const AuthView = ({
     onAuthenticated,
@@ -613,16 +817,28 @@ const ProjectCard = ({ project, onClick, onRename, onDelete, onShare }: any) => 
 
 const ProjectRow = ({ project, onClick, onRename, onDelete, onShare }: any) => {
     let Icon = IconFile;
+    let bgColor = 'bg-zinc-50 dark:bg-zinc-800';
+    let textColor = 'text-zinc-500 dark:text-zinc-400';
     if (project.type === 'graph') Icon = IconGraph;
-    else if (project.type === 'note') Icon = IconEdit;
-    else if (project.type === 'resource') Icon = IconLink;
+    if (project.type === 'graph') {
+        bgColor = 'bg-blue-50 dark:bg-blue-900/30';
+        textColor = 'text-blue-600 dark:text-blue-300';
+    } else if (project.type === 'note') {
+        Icon = IconEdit;
+        bgColor = 'bg-yellow-50 dark:bg-yellow-900/30';
+        textColor = 'text-yellow-600 dark:text-yellow-300';
+    } else if (project.type === 'resource') {
+        Icon = IconLink;
+        bgColor = 'bg-emerald-50 dark:bg-emerald-900/30';
+        textColor = 'text-emerald-600 dark:text-emerald-300';
+    }
 
     return (
         <div 
             onClick={onClick}
             className="group flex items-center p-3 bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-lg hover:border-blue-200 dark:hover:border-blue-800 hover:shadow-sm transition-all cursor-pointer relative"
         >
-            <div className="p-2 bg-zinc-50 dark:bg-zinc-800 rounded-lg text-zinc-500 dark:text-zinc-400 mr-3 group-hover:bg-blue-50 dark:group-hover:bg-blue-900/30 group-hover:text-blue-600 dark:group-hover:text-blue-300 transition-colors">
+            <div className={`p-2 rounded-lg mr-3 transition-colors ${bgColor} ${textColor}`}>
                 <Icon className="w-4 h-4" />
             </div>
             <div className="flex-1 min-w-0 mr-4">
@@ -1501,9 +1717,25 @@ const ResourceViewer = ({ project }: { project: any }) => {
 };
 
 const AgentPanel = () => {
-    const { isAgentPanelOpen, toggleAgentPanel, chatMessages, sendAgentMessage } = useStore();
+    const {
+        isAgentPanelOpen,
+        toggleAgentPanel,
+        chatMessages,
+        copilotThreads,
+        activeCopilotThreadId,
+        activeProjectId,
+        projects,
+        sendAgentMessage,
+        createCopilotThread,
+        openCopilotThread,
+        deleteCopilotThread,
+    } = useStore();
     const [input, setInput] = useState('');
+    const [shareStatus, setShareStatus] = useState<string | null>(null);
+    const [isThreadListOpen, setIsThreadListOpen] = useState(false);
     const scrollRef = useRef<HTMLDivElement>(null);
+    const activeProject = projects.find((project) => project.id === activeProjectId) || null;
+    const activeThread = copilotThreads.find((thread) => thread.id === activeCopilotThreadId) || copilotThreads[0] || null;
     
     // Resize Logic
     const [width, setWidth] = useState(400); // Default wider
@@ -1535,10 +1767,62 @@ const AgentPanel = () => {
         };
     }, [isResizing]);
 
+    useEffect(() => {
+        if (!shareStatus) return;
+        const timer = window.setTimeout(() => setShareStatus(null), 2200);
+        return () => window.clearTimeout(timer);
+    }, [shareStatus]);
+
+    useEffect(() => {
+        if (copilotThreads.length <= 1) {
+            setIsThreadListOpen(false);
+        }
+    }, [copilotThreads.length]);
+
     const handleSend = () => {
         if (!input.trim()) return;
-        sendAgentMessage(input);
+        void sendAgentMessage(input);
         setInput('');
+    };
+
+    const handleShare = async () => {
+        if (!activeThread || activeThread.messages.length === 0) return;
+
+        const shareText = buildCopilotShareText(activeProject?.title || 'LinkVerse', activeThread);
+
+        try {
+            if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+                await navigator.share({
+                    title: `${activeProject?.title || 'LinkVerse'} — ${activeThread.title}`,
+                    text: shareText,
+                });
+                setShareStatus('Shared');
+                return;
+            }
+
+            if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+                await navigator.clipboard.writeText(shareText);
+                setShareStatus('Copied');
+                return;
+            }
+
+            setShareStatus('Share unavailable');
+        } catch (error) {
+            if (error instanceof DOMException && error.name === 'AbortError') {
+                return;
+            }
+            setShareStatus('Share failed');
+        }
+    };
+
+    const handleDeleteThread = (threadId: string) => {
+        const targetThread = copilotThreads.find((thread) => thread.id === threadId);
+        if (!targetThread) return;
+
+        const shouldDelete = window.confirm(`Delete chat "${targetThread.title}"?`);
+        if (!shouldDelete) return;
+
+        deleteCopilotThread(threadId);
     };
 
     if (!isAgentPanelOpen) return (
@@ -1564,18 +1848,119 @@ const AgentPanel = () => {
                 <div className="flex items-center gap-2 font-bold text-sm text-indigo-600 dark:text-indigo-400">
                     <IconMagic className="w-4 h-4" /> Workspace Copilot
                 </div>
-                <button onClick={toggleAgentPanel} className="text-zinc-400 hover:text-zinc-600"><IconX className="w-4 h-4" /></button>
+                <div className="flex items-center gap-1">
+                    <button
+                        onClick={createCopilotThread}
+                        className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] font-medium text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+                    >
+                        <IconPlus className="w-3.5 h-3.5" />
+                        New
+                    </button>
+                    <button
+                        onClick={() => void handleShare()}
+                        disabled={!activeThread || activeThread.messages.length === 0}
+                        className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] font-medium text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+                    >
+                        <IconShare className="w-3.5 h-3.5" />
+                        Share
+                    </button>
+                    <button
+                        onClick={() => activeThread && handleDeleteThread(activeThread.id)}
+                        disabled={!activeThread}
+                        className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] font-medium text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+                    >
+                        <IconTrash className="w-3.5 h-3.5" />
+                        Delete
+                    </button>
+                    <button onClick={toggleAgentPanel} className="ml-1 text-zinc-400 hover:text-zinc-600"><IconX className="w-4 h-4" /></button>
+                </div>
+            </div>
+            <div className="border-b border-zinc-100 dark:border-zinc-800">
+                <button
+                    onClick={() => setIsThreadListOpen((value) => !value)}
+                    className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800/60"
+                >
+                    <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                            <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-400">
+                                Threads
+                            </div>
+                            <div className="text-[11px] text-zinc-400">
+                                {shareStatus || `${copilotThreads.length} thread${copilotThreads.length === 1 ? '' : 's'}`}
+                            </div>
+                        </div>
+                        <div className="mt-1 truncate text-[13px] font-medium text-zinc-800 dark:text-zinc-100">
+                            {activeThread?.title || 'New chat'}
+                        </div>
+                    </div>
+                    <IconArrowRight
+                        className={`w-4 h-4 shrink-0 text-zinc-400 transition-transform ${isThreadListOpen ? 'rotate-90' : ''}`}
+                    />
+                </button>
+                {isThreadListOpen && (
+                    <div className="max-h-48 overflow-y-auto border-t border-zinc-100 dark:border-zinc-800">
+                        {copilotThreads.map((thread) => {
+                            const isActive = thread.id === activeCopilotThreadId;
+                            const preview = thread.messages[thread.messages.length - 1]?.text || 'Fresh chat';
+
+                            return (
+                                <div
+                                    key={thread.id}
+                                    className={`group flex items-center gap-2 border-b border-zinc-100/80 px-2 py-1.5 last:border-b-0 dark:border-zinc-800/80 ${
+                                        isActive ? 'bg-zinc-50 dark:bg-zinc-800/50' : ''
+                                    }`}
+                                >
+                                    <button
+                                        onClick={() => openCopilotThread(thread.id)}
+                                        className="min-w-0 flex-1 rounded-xl px-2.5 py-2 text-left transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                                    >
+                                        <div className="flex items-center justify-between gap-3">
+                                            <div className={`truncate text-[12px] font-medium ${isActive ? 'text-zinc-900 dark:text-zinc-100' : 'text-zinc-700 dark:text-zinc-200'}`}>
+                                                {thread.title}
+                                            </div>
+                                            <div className="shrink-0 text-[10px] text-zinc-400">
+                                                {formatCopilotThreadTime(thread.updatedAt)}
+                                            </div>
+                                        </div>
+                                        <div className={`mt-1 truncate text-[11px] ${isActive ? 'text-zinc-500 dark:text-zinc-400' : 'text-zinc-400 dark:text-zinc-500'}`}>
+                                            {preview}
+                                        </div>
+                                    </button>
+                                    <button
+                                        onClick={() => handleDeleteThread(thread.id)}
+                                        className="rounded-lg p-1.5 text-zinc-300 opacity-0 transition-all hover:bg-zinc-100 hover:text-red-500 group-hover:opacity-100 dark:text-zinc-600 dark:hover:bg-zinc-800"
+                                        title="Delete chat"
+                                    >
+                                        <IconTrash className="w-3.5 h-3.5" />
+                                    </button>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
             </div>
             <div className="flex-1 overflow-y-auto p-4 space-y-4" ref={scrollRef}>
                 {chatMessages.length === 0 && (
                     <div className="text-center text-zinc-400 text-xs mt-10">
-                        Ask me to generate nodes, summarize content, or connect ideas.
+                        Ask me what a graph means, which branch feels weak, or what to add next.
                     </div>
                 )}
                 {chatMessages.map(msg => (
                     <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`max-w-[85%] p-3 rounded-2xl text-xs leading-relaxed ${msg.role === 'user' ? 'bg-indigo-600 text-white rounded-br-none' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 rounded-bl-none'}`}>
-                            {msg.text}
+                        <div
+                            className={`max-w-[88%] px-4 py-3.5 rounded-[22px] shadow-sm ${
+                                msg.role === 'user'
+                                    ? 'bg-zinc-900 text-white rounded-br-md'
+                                    : 'bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-200 rounded-bl-md border border-zinc-200/80 dark:border-zinc-800'
+                            }`}
+                        >
+                            {msg.role === 'user' ? (
+                                <div className="whitespace-pre-wrap text-[13px] leading-6 text-white/96">
+                                    {msg.text}
+                                </div>
+                            ) : (
+                                <ChatMarkdown content={msg.text} />
+                            )}
                         </div>
                     </div>
                 ))}
@@ -1584,7 +1969,7 @@ const AgentPanel = () => {
                 <div className="relative">
                     <input 
                         className="w-full pl-3 pr-10 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500" 
-                        placeholder="Ask the copilot to expand, connect, or sync..." 
+                        placeholder="Ask the copilot to explain, critique, expand, or sync..." 
                         value={input}
                         onChange={e => setInput(e.target.value)}
                         onKeyDown={e => e.key === 'Enter' && handleSend()}
