@@ -804,6 +804,92 @@ const isLowSignalCopilotReply = (replyText: string) =>
     replyText.trim()
   );
 
+const truncateForAI = (text: string, maxLength = 2200) => {
+  const compact = text.replace(/\s+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+  if (compact.length <= maxLength) return compact;
+  return `${compact.slice(0, maxLength - 3).trimEnd()}...`;
+};
+
+const buildKnowledgeItemSnippet = (project: Project) => {
+  if (project.type === 'graph') {
+    return `Graph nodes: ${project.nodes
+      .slice(0, 14)
+      .map((node) => node.data.label)
+      .filter(Boolean)
+      .join(', ') || 'No nodes yet.'}`;
+  }
+
+  if (project.type === 'resource') {
+    const capturedText = project.content?.trim();
+    const summary = project.summary?.trim();
+    return [
+      project.url ? `URL: ${project.url}` : '',
+      summary ? `Saved summary: ${truncateForAI(summary, 500)}` : '',
+      capturedText ? `Captured text: ${truncateForAI(capturedText, 900)}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
+  }
+
+  return truncateForAI(project.content || 'No note content yet.', 1100);
+};
+
+const buildRelatedKnowledgeContext = (project: Project, projects: Project[]) => {
+  const relatedProjects = projects
+    .filter(
+      (candidate) =>
+        candidate.id !== project.id &&
+        candidate.databaseTags.some((tag) => project.databaseTags.includes(tag))
+    )
+    .slice(0, 5);
+
+  if (relatedProjects.length === 0) {
+    return 'Related knowledge: none.';
+  }
+
+  return [
+    'Related knowledge:',
+    ...relatedProjects.map(
+      (candidate, index) =>
+        `${index + 1}. ${candidate.title} (${candidate.type}) [tags: ${candidate.databaseTags.join(', ') || 'none'}]\n${buildKnowledgeItemSnippet(candidate)}`
+    ),
+  ].join('\n\n');
+};
+
+const buildProjectReadingContext = (project: Project, activeProjectContent: string, projects: Project[]) => {
+  if (project.type === 'graph') {
+    const graphContext = buildGraphContext(project, project.nodes, project.edges);
+    const relatedContext = buildRelatedKnowledgeContext(project, projects);
+    return `${graphContext}\n\n${relatedContext}`;
+  }
+
+  if (project.type === 'resource') {
+    const capturedText = activeProjectContent || project.content || '';
+    const resourceSections = [
+      `Project: ${project.title}`,
+      'Type: resource',
+      `Tags: ${project.databaseTags.join(', ') || 'none'}`,
+      project.url ? `URL: ${project.url}` : 'URL: not set',
+      project.summary ? `Saved summary:\n${truncateForAI(project.summary, 700)}` : 'Saved summary:\nNo summary yet.',
+      capturedText
+        ? `Captured text / notes for copilot:\n${truncateForAI(capturedText, 1800)}`
+        : 'Captured text / notes for copilot:\nNo captured text yet.',
+      buildRelatedKnowledgeContext(project, projects),
+    ];
+
+    return resourceSections.join('\n\n');
+  }
+
+  const noteContent = activeProjectContent || project.content || '';
+  return [
+    `Project: ${project.title}`,
+    'Type: note',
+    `Tags: ${project.databaseTags.join(', ') || 'none'}`,
+    noteContent ? `Note content:\n${truncateForAI(noteContent, 2200)}` : 'Note content:\nThis note is still empty.',
+    buildRelatedKnowledgeContext(project, projects),
+  ].join('\n\n');
+};
+
 const buildCopilotPrompt = (userText: string, context: string, toolsEnabled: boolean) => {
   const prefersChinese = containsCJK(userText);
   const languageInstruction = prefersChinese ? '请用简体中文回答。' : 'Reply in English.';
@@ -821,7 +907,8 @@ Behavior rules:
 3. If the request is not directly editable from chat, do not blame internal tools or capabilities. Briefly explain the limitation, then offer the closest helpful guidance or manual step.
 4. Keep the tone concise, thoughtful, and product-savvy rather than robotic.
 5. Use clean Markdown with short paragraphs and flat bullet lists when it improves readability. Use **bold** only for key terms. Avoid tables unless the user explicitly asks for one.
-6. ${toolInstruction}
+6. When a saved link or resource is in context, use its URL, saved summary, and any captured text or notes to interpret it. If the user wants a deeper reading but only a bare URL is available, ask for pasted excerpts or notes.
+7. ${toolInstruction}
 
 Workspace context:
 ${context}
@@ -2118,12 +2205,16 @@ export const useStore = create<StoreState>()(
               const exposeGraphTools = project.type === 'graph' ? shouldExposeGraphTools(text) : false;
               
               if (project.type === 'graph') {
-                  context = buildGraphContext(project, nodes, edges);
+                  context = buildProjectReadingContext(
+                      { ...project, nodes, edges },
+                      activeProjectContent,
+                      projects
+                  );
                   if (exposeGraphTools) {
                       toolsList = [addNodeTool, connectNodesTool, changeLayoutTool, syncGraphTool];
                   }
               } else {
-                  context = `Project: ${project.title}\nContent:\n${activeProjectContent || 'No content yet.'}`;
+                  context = buildProjectReadingContext(project, activeProjectContent, projects);
               }
 
               const ai = getAIClient();

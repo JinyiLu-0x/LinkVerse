@@ -1688,6 +1688,8 @@ const DatabaseSelector = ({ projectId, isOpen, onToggle }: { projectId: string, 
 const ResourceViewer = ({ project }: { project: any }) => {
     const [loadError, setLoadError] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
+    const capturedText = useStore(s => s.activeProjectContent);
+    const updateCapturedText = useStore(s => s.updateNoteContent);
     const handleIframeLoad = () => { setIsLoading(false); };
     const handleIframeError = () => { setIsLoading(false); setLoadError(true); };
 
@@ -1697,20 +1699,47 @@ const ResourceViewer = ({ project }: { project: any }) => {
                 <div className="flex items-center gap-3 overflow-hidden"><div className="p-2 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 rounded-lg"><IconLink className="w-4 h-4" /></div><div className="min-w-0"><h2 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 truncate">{project.title}</h2><a href={project.url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-500 hover:underline truncate block">{project.url}</a></div></div>
                 <div className="flex items-center gap-4"><div className="text-right hidden sm:block"><div className="text-[10px] text-zinc-400 uppercase tracking-wider font-bold">Summary</div><div className="text-xs text-zinc-600 dark:text-zinc-400 max-w-[200px] truncate">{project.summary || 'No summary'}</div></div><a href={project.url} target="_blank" rel="noreferrer" className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-500 transition-colors" title="Open in new tab"><IconExternal className="w-4 h-4" /></a></div>
             </div>
-            <div className="flex-1 relative bg-white dark:bg-zinc-900 overflow-hidden">
-                {!loadError ? (
-                    <>
-                        {isLoading && <div className="absolute inset-0 flex items-center justify-center bg-zinc-50 dark:bg-zinc-900 z-10"><div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div></div>}
-                        <iframe src={project.url} className="w-full h-full border-none" onLoad={handleIframeLoad} onError={handleIframeError} title="Resource Preview" sandbox="allow-same-origin allow-scripts allow-popups allow-forms" />
-                    </>
-                ) : (
-                    <div className="flex flex-col items-center justify-center h-full p-8 text-center">
-                        <div className="w-16 h-16 bg-zinc-100 dark:bg-zinc-800 rounded-full flex items-center justify-center mb-4 text-zinc-400"><IconLink className="w-8 h-8" /></div>
-                        <h3 className="text-lg font-bold text-zinc-800 dark:text-zinc-200 mb-2">Preview Unavailable</h3>
-                        <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-6 max-w-sm">This website cannot be embedded directly due to security restrictions (X-Frame-Options).</p>
-                        <a href={project.url} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors shadow-sm">Open in New Tab</a>
+            <div className="flex-1 overflow-hidden">
+                <div className="grid h-full grid-cols-1 xl:grid-cols-[minmax(0,1fr)_360px]">
+                    <div className="relative bg-white dark:bg-zinc-900 overflow-hidden border-b border-zinc-200 dark:border-zinc-800 xl:border-b-0 xl:border-r">
+                        {!loadError ? (
+                            <>
+                                {isLoading && <div className="absolute inset-0 flex items-center justify-center bg-zinc-50 dark:bg-zinc-900 z-10"><div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div></div>}
+                                <iframe src={project.url} className="w-full h-full border-none" onLoad={handleIframeLoad} onError={handleIframeError} title="Resource Preview" sandbox="allow-same-origin allow-scripts allow-popups allow-forms" />
+                            </>
+                        ) : (
+                            <div className="flex flex-col items-center justify-center h-full p-8 text-center">
+                                <div className="w-16 h-16 bg-zinc-100 dark:bg-zinc-800 rounded-full flex items-center justify-center mb-4 text-zinc-400"><IconLink className="w-8 h-8" /></div>
+                                <h3 className="text-lg font-bold text-zinc-800 dark:text-zinc-200 mb-2">Preview Unavailable</h3>
+                                <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-6 max-w-sm">This website cannot be embedded directly due to security restrictions (X-Frame-Options).</p>
+                                <a href={project.url} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors shadow-sm">Open in New Tab</a>
+                            </div>
+                        )}
                     </div>
-                )}
+
+                    <aside className="h-full overflow-y-auto bg-zinc-50/80 dark:bg-zinc-950/70 p-5">
+                        <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 shadow-sm">
+                            <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-400 mb-2">
+                                Copilot Context
+                            </div>
+                            <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 mb-2">
+                                Paste text from the link
+                            </h3>
+                            <p className="text-xs leading-5 text-zinc-500 dark:text-zinc-400 mb-4">
+                                Copilot already sees the saved URL and summary. Paste excerpts, notes, or key paragraphs here if you want a deeper reading.
+                            </p>
+                            <textarea
+                                className="min-h-[260px] w-full resize-none rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-4 py-3 text-sm leading-6 text-zinc-800 dark:text-zinc-100 outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
+                                placeholder="Paste article excerpts, transcript text, rough notes, or your own take here. The copilot will read this when you ask it to explain or critique the link."
+                                value={capturedText}
+                                onChange={(e) => updateCapturedText(e.target.value)}
+                            />
+                            <div className="mt-4 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 px-3 py-2.5 text-[11px] leading-5 text-zinc-500 dark:text-zinc-400">
+                                Try asking: “Summarize this link”, “What is the main argument?”, “Pull out the key claims”, or “Critique this article.”
+                            </div>
+                        </div>
+                    </aside>
+                </div>
             </div>
         </div>
     );
@@ -1942,7 +1971,7 @@ const AgentPanel = () => {
             <div className="flex-1 overflow-y-auto p-4 space-y-4" ref={scrollRef}>
                 {chatMessages.length === 0 && (
                     <div className="text-center text-zinc-400 text-xs mt-10">
-                        Ask me what a graph means, which branch feels weak, or what to add next.
+                        Ask me to read this note, interpret the saved link, explain a graph, or suggest the next move.
                     </div>
                 )}
                 {chatMessages.map(msg => (
@@ -1969,7 +1998,7 @@ const AgentPanel = () => {
                 <div className="relative">
                     <input 
                         className="w-full pl-3 pr-10 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500" 
-                        placeholder="Ask the copilot to explain, critique, expand, or sync..." 
+                        placeholder="Ask the copilot to read, interpret, critique, expand, or sync..." 
                         value={input}
                         onChange={e => setInput(e.target.value)}
                         onKeyDown={e => e.key === 'Enter' && handleSend()}
