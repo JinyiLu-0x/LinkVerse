@@ -11,13 +11,14 @@ import ReactFlow, {
 } from 'reactflow';
 import {
   createDefaultWorkspaceSnapshot,
+  DATABASE_COLOR_SPECTRUM,
   getWorkspaceSnapshotFromState,
   normalizeWorkspaceSnapshot,
   useStore,
 } from './store/useStore';
 import BrandLogo from './components/BrandLogo';
 import MindNode from './components/MindNode';
-import { ProjectType, CopilotThread, Friend } from './types';
+import { ProjectType, CopilotThread, Friend, Theme, DatabaseDefinition } from './types';
 import {
   AI_CONFIG,
   clearStoredAISettings,
@@ -37,6 +38,9 @@ import {
   registerLocalAccount,
   saveWorkspaceSnapshot,
   setCachedWorkspaceOwnerId,
+  updateCurrentUserAvatar,
+  updateCurrentUserEmail,
+  updateCurrentUserPassword,
   updateCurrentUserProfile,
   type SessionUser,
 } from './auth';
@@ -94,6 +98,10 @@ const IconRefresh = (props: React.SVGProps<SVGSVGElement>) => <svg xmlns="http:/
 const IconEye = (props: React.SVGProps<SVGSVGElement>) => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>;
 const IconEyeOff = (props: React.SVGProps<SVGSVGElement>) => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" x2="22" y1="2" y2="22"/></svg>;
 const IconLogOut = (props: React.SVGProps<SVGSVGElement>) => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/><path d="M13 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8"/></svg>;
+const IconMail = (props: React.SVGProps<SVGSVGElement>) => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 7 8 6 8-6"/></svg>;
+const IconLock = (props: React.SVGProps<SVGSVGElement>) => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 1 1 8 0v4"/></svg>;
+const IconUpload = (props: React.SVGProps<SVGSVGElement>) => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/></svg>;
+const IconPalette = (props: React.SVGProps<SVGSVGElement>) => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M12 22a1 1 0 0 0 1-1v-1a2 2 0 0 1 2-2h1a4 4 0 0 0 0-8h-1"/><path d="M8 18H6a4 4 0 0 1 0-8h1"/><path d="M12 2a10 10 0 1 0 0 20"/><circle cx="8.5" cy="8.5" r=".5" fill="currentColor"/><circle cx="15.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="16.5" cy="14.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="14.5" r=".5" fill="currentColor"/></svg>;
 
 // --- Components ---
 
@@ -241,6 +249,265 @@ const LanguageToggle = ({
             {hint && <p className="text-xs text-zinc-400">{hint}</p>}
         </div>
     );
+};
+
+type SettingsSectionId = 'profile' | 'account' | 'appearance' | 'language' | 'ai';
+
+const AVATAR_EXPORT_SIZE = 256;
+
+const readFileAsDataUrl = (file: File) =>
+    new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
+        reader.onerror = () => reject(new Error('Could not read file.'));
+        reader.readAsDataURL(file);
+    });
+
+const loadImageElement = (src: string) =>
+    new Promise<HTMLImageElement>((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => resolve(image);
+        image.onerror = () => reject(new Error('Could not load image.'));
+        image.src = src;
+    });
+
+const prepareAvatarDataUrl = async (file: File) => {
+    const rawDataUrl = await readFileAsDataUrl(file);
+    const image = await loadImageElement(rawDataUrl);
+    const canvas = document.createElement('canvas');
+    canvas.width = AVATAR_EXPORT_SIZE;
+    canvas.height = AVATAR_EXPORT_SIZE;
+
+    const context = canvas.getContext('2d');
+    if (!context) {
+        return rawDataUrl;
+    }
+
+    const scale = Math.max(
+        AVATAR_EXPORT_SIZE / image.width,
+        AVATAR_EXPORT_SIZE / image.height
+    );
+    const scaledWidth = image.width * scale;
+    const scaledHeight = image.height * scale;
+    const offsetX = (AVATAR_EXPORT_SIZE - scaledWidth) / 2;
+    const offsetY = (AVATAR_EXPORT_SIZE - scaledHeight) / 2;
+
+    context.fillStyle = '#f4f4f5';
+    context.fillRect(0, 0, AVATAR_EXPORT_SIZE, AVATAR_EXPORT_SIZE);
+    context.drawImage(image, offsetX, offsetY, scaledWidth, scaledHeight);
+
+    return canvas.toDataURL('image/jpeg', 0.88);
+};
+
+const AvatarBadge = ({
+    avatarUrl,
+    initials,
+    name,
+    className = '',
+    textClassName = '',
+}: {
+    avatarUrl?: string,
+    initials: string,
+    name: string,
+    className?: string,
+    textClassName?: string,
+}) => {
+    if (avatarUrl) {
+        return (
+            <img
+                src={avatarUrl}
+                alt={name}
+                className={`object-cover ${className}`}
+            />
+        );
+    }
+
+    return (
+        <div
+            className={`flex items-center justify-center bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 ${textClassName} ${className}`}
+        >
+            {initials}
+        </div>
+    );
+};
+
+const SettingsSectionButton = ({
+    active,
+    icon,
+    title,
+    collapsed,
+    onClick,
+}: {
+    active: boolean,
+    icon: React.ReactNode,
+    title: string,
+    collapsed?: boolean,
+    onClick: () => void,
+}) => (
+    <button
+        type="button"
+        onClick={onClick}
+        title={collapsed ? title : undefined}
+        aria-label={title}
+        aria-pressed={active}
+        className={`group relative ${
+            collapsed
+                ? 'mx-auto flex h-12 w-12 items-center justify-center rounded-2xl transition-all'
+                : 'flex w-full items-center rounded-2xl px-3.5 py-2.5 text-left text-sm font-medium transition-all'
+        } ${
+            active
+                ? `${SOFT_ACTIVE_SURFACE} text-zinc-900 dark:text-zinc-50`
+                : collapsed
+                    ? `border border-transparent text-zinc-500 dark:text-zinc-400 ${SOFT_HOVER_SURFACE} hover:text-zinc-900 dark:hover:text-zinc-100`
+                    : `border border-transparent text-zinc-500 dark:text-zinc-400 ${SOFT_HOVER_SURFACE} hover:text-zinc-900 dark:hover:text-zinc-100`
+        }`}
+    >
+        {collapsed && (
+            <span
+                className={`absolute -left-3 h-6 w-1 rounded-r-full transition-all ${
+                    active
+                        ? 'bg-zinc-300 opacity-100 dark:bg-white/[0.32]'
+                        : 'bg-zinc-300 opacity-0 group-hover:opacity-60 dark:bg-zinc-600'
+                }`}
+            />
+        )}
+        <div
+            className={`flex items-center ${
+                collapsed ? 'justify-center' : 'w-full gap-3'
+            }`}
+        >
+            <div
+                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl transition-colors ${
+                    active
+                        ? 'bg-white/[0.7] text-current dark:bg-white/[0.08]'
+                        : 'text-zinc-400 dark:text-zinc-500'
+                }`}
+            >
+                {icon}
+            </div>
+            {!collapsed && (
+                <>
+                    <div className="min-w-0 flex-1 truncate">{title}</div>
+                    {active && <div className="h-2 w-2 rounded-full bg-current opacity-70" />}
+                </>
+            )}
+        </div>
+    </button>
+);
+
+const SettingsCard = ({
+    title,
+    description,
+    children,
+}: {
+    title: string,
+    description: string,
+    children: React.ReactNode,
+}) => (
+    <section>
+        <div className="mb-6">
+            <h3 className="text-xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">{title}</h3>
+            <p className="mt-2 text-sm leading-6 text-zinc-500 dark:text-zinc-400">{description}</p>
+        </div>
+        <div className="space-y-8">{children}</div>
+    </section>
+);
+
+const SettingsDivider = () => <div className="border-t border-zinc-200 dark:border-white/[0.08]" />;
+
+const SOFT_ACTIVE_SURFACE =
+    'border border-zinc-200/80 bg-white/[0.76] shadow-[0_16px_38px_rgba(15,23,42,0.06)] backdrop-blur-xl dark:border-white/[0.08] dark:bg-white/[0.08] dark:shadow-[0_14px_30px_rgba(0,0,0,0.18)]';
+
+const SOFT_HOVER_SURFACE =
+    'hover:border-zinc-200/80 hover:bg-white/[0.64] dark:hover:border-white/[0.08] dark:hover:bg-white/[0.06]';
+
+const DATABASE_RAIL_ACTIVE_SURFACE =
+    'border-zinc-200/80 bg-white/[0.88] shadow-[0_16px_34px_rgba(15,23,42,0.05)] backdrop-blur-xl dark:border-white/[0.08] dark:bg-white/[0.06] dark:shadow-[0_14px_28px_rgba(0,0,0,0.16)]';
+
+const DATABASE_RAIL_HOVER_SURFACE =
+    'hover:border-zinc-200/70 hover:bg-white/[0.72] dark:hover:border-white/[0.08] dark:hover:bg-white/[0.04]';
+
+type DatabaseDraft = {
+    mode: 'create' | 'edit',
+    originalName?: string,
+    name: string,
+    color: string,
+    iconType: DatabaseDefinition['iconType'],
+    emoji: string,
+};
+
+const hexToRgba = (hex: string, alpha: number) => {
+    const normalized = hex.replace('#', '').trim();
+    const full = normalized.length === 3
+        ? normalized.split('').map((char) => `${char}${char}`).join('')
+        : normalized;
+
+    if (full.length !== 6) {
+        return `rgba(99, 102, 241, ${alpha})`;
+    }
+
+    const value = Number.parseInt(full, 16);
+    const r = (value >> 16) & 255;
+    const g = (value >> 8) & 255;
+    const b = value & 255;
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+};
+
+const getDatabaseInteractionStyle = (
+    color: string,
+    state: 'rest' | 'hover' | 'selected'
+): React.CSSProperties => {
+    if (state === 'selected') {
+        return {
+            borderColor: hexToRgba(color, 0.18),
+            boxShadow: '0 16px 34px rgba(15, 23, 42, 0.05)',
+        };
+    }
+
+    if (state === 'hover') {
+        return {
+            borderColor: hexToRgba(color, 0.12),
+        };
+    }
+
+    return {};
+};
+
+const getDatabaseBadgeStyle = (
+    color: string,
+    emphasis: 'soft' | 'medium' = 'soft'
+): React.CSSProperties => ({
+    backgroundColor: hexToRgba(color, emphasis === 'medium' ? 0.14 : 0.1),
+    borderColor: hexToRgba(color, emphasis === 'medium' ? 0.24 : 0.16),
+    color,
+});
+
+const createDatabaseDraft = (
+    database?: DatabaseDefinition,
+    mode: 'create' | 'edit' = 'create'
+): DatabaseDraft => ({
+    mode,
+    originalName: database?.name,
+    name: database?.name || '',
+    color: database?.color || DATABASE_COLOR_SPECTRUM[0],
+    iconType: database?.iconType || 'folder',
+    emoji: database?.emoji || '✨',
+});
+
+const DatabaseGlyph = ({
+    database,
+    className = '',
+    textClassName = '',
+}: {
+    database?: DatabaseDefinition | null,
+    className?: string,
+    textClassName?: string,
+}) => {
+    if (database?.iconType === 'emoji' && database.emoji) {
+        return <span className={textClassName}>{database.emoji}</span>;
+    }
+
+    return <IconFolder className={className} />;
 };
 
 const markdownTokenPattern =
@@ -705,7 +972,8 @@ const Toast = ({ message, onClose }: { message: string, onClose: () => void }) =
     );
 };
 
-const DatabaseMenu = ({ tag, onRename, onDelete, onShare }: any) => {
+const DatabaseMenu = ({ tag, onRename, onDelete, onShare, language }: any) => {
+    const copy = getUIText(language);
     const [isOpen, setIsOpen] = useState(false);
 
     return (
@@ -728,19 +996,19 @@ const DatabaseMenu = ({ tag, onRename, onDelete, onShare }: any) => {
                             onClick={(e) => { e.stopPropagation(); setIsOpen(false); onShare(tag); }}
                             className="w-full text-left px-3 py-2 text-xs text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 flex items-center gap-2"
                         >
-                            <IconShare className="w-3 h-3" /> Share
+                            <IconShare className="w-3 h-3" /> {copy.common.share}
                         </button>
                         <button 
                             onClick={(e) => { e.stopPropagation(); setIsOpen(false); onRename(tag); }}
                             className="w-full text-left px-3 py-2 text-xs text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 flex items-center gap-2"
                         >
-                            <IconEdit className="w-3 h-3" /> Rename
+                            <IconEdit className="w-3 h-3" /> {copy.common.edit}
                         </button>
                         <button 
                             onClick={(e) => { e.stopPropagation(); setIsOpen(false); onDelete(tag); }}
                             className="w-full text-left px-3 py-2 text-xs text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2"
                         >
-                            <IconTrash className="w-3 h-3" /> Delete
+                            <IconTrash className="w-3 h-3" /> {copy.common.delete}
                         </button>
                     </div>
                 </>
@@ -749,7 +1017,8 @@ const DatabaseMenu = ({ tag, onRename, onDelete, onShare }: any) => {
     );
 };
 
-const ProjectMenu = ({ project, onRename, onDelete, onShare }: any) => {
+const ProjectMenu = ({ project, onRename, onDelete, onShare, language }: any) => {
+    const copy = getUIText(language);
     const [isOpen, setIsOpen] = useState(false);
 
     return (
@@ -782,7 +1051,7 @@ const ProjectMenu = ({ project, onRename, onDelete, onShare }: any) => {
                             }}
                             className="w-full text-left px-3 py-2 text-xs font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 flex items-center gap-2 whitespace-nowrap"
                         >
-                            <IconShare className="w-3.5 h-3.5" /> Share
+                            <IconShare className="w-3.5 h-3.5" /> {copy.common.share}
                         </button>
                         <button 
                             onClick={(e) => {
@@ -792,7 +1061,7 @@ const ProjectMenu = ({ project, onRename, onDelete, onShare }: any) => {
                             }}
                             className="w-full text-left px-3 py-2 text-xs font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 flex items-center gap-2 whitespace-nowrap"
                         >
-                            <IconEdit className="w-3.5 h-3.5" /> Rename
+                            <IconEdit className="w-3.5 h-3.5" /> {copy.common.rename}
                         </button>
                         <div className="h-px bg-zinc-100 dark:bg-zinc-800 my-1"></div>
                         <button 
@@ -803,7 +1072,7 @@ const ProjectMenu = ({ project, onRename, onDelete, onShare }: any) => {
                             }}
                             className="w-full text-left px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2 whitespace-nowrap"
                         >
-                            <IconTrash className="w-3.5 h-3.5" /> Delete
+                            <IconTrash className="w-3.5 h-3.5" /> {copy.common.delete}
                         </button>
                     </div>
                 </>
@@ -812,7 +1081,7 @@ const ProjectMenu = ({ project, onRename, onDelete, onShare }: any) => {
     );
 };
 
-const ProjectCard = ({ project, onClick, onRename, onDelete, onShare }: any) => {
+const ProjectCard = ({ project, onClick, onRename, onDelete, onShare, language }: any) => {
     let Icon = IconFile;
     let bgColor = 'bg-zinc-100 dark:bg-zinc-800';
     let textColor = 'text-zinc-600 dark:text-zinc-400';
@@ -859,6 +1128,7 @@ const ProjectCard = ({ project, onClick, onRename, onDelete, onShare }: any) => 
                             onRename={onRename}
                             onDelete={onDelete}
                             onShare={onShare}
+                            language={language}
                         />
                     </div>
                 </div>
@@ -866,7 +1136,10 @@ const ProjectCard = ({ project, onClick, onRename, onDelete, onShare }: any) => 
                 <h3 className="font-semibold text-zinc-900 dark:text-zinc-100 text-sm mb-1 truncate pr-4">{project.title}</h3>
                 <div className="flex gap-1 mb-2 overflow-hidden flex-wrap h-6 content-start">
                     {displayTags.slice(0, 3).map((t: string) => (
-                        <span key={t} className={`px-1.5 py-0.5 text-[9px] rounded border whitespace-nowrap ${t === 'Inbox' ? 'bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 border-orange-100 dark:border-orange-900/30' : 'bg-zinc-50 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-500 border-zinc-100 dark:border-zinc-700'}`}>
+                        <span
+                            key={t}
+                            className="inline-flex items-center whitespace-nowrap rounded-full border border-zinc-200/80 bg-zinc-50 px-2 py-0.5 text-[10px] font-medium text-zinc-500 dark:border-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-300"
+                        >
                             {t}
                         </span>
                     ))}
@@ -877,7 +1150,7 @@ const ProjectCard = ({ project, onClick, onRename, onDelete, onShare }: any) => 
     );
 };
 
-const ProjectRow = ({ project, onClick, onRename, onDelete, onShare }: any) => {
+const ProjectRow = ({ project, onClick, onRename, onDelete, onShare, language }: any) => {
     let Icon = IconFile;
     let bgColor = 'bg-zinc-50 dark:bg-zinc-800';
     let textColor = 'text-zinc-500 dark:text-zinc-400';
@@ -908,7 +1181,12 @@ const ProjectRow = ({ project, onClick, onRename, onDelete, onShare }: any) => {
             </div>
             <div className="hidden md:flex gap-2 mr-4">
                 {project.databaseTags.map((t: string) => (
-                    <span key={t} className="px-2 py-0.5 bg-zinc-50 dark:bg-zinc-800 text-[10px] text-zinc-500 dark:text-zinc-400 rounded-full border border-zinc-100 dark:border-zinc-700">{t}</span>
+                    <span
+                        key={t}
+                        className="inline-flex items-center rounded-full border border-zinc-200/80 bg-zinc-50 px-2 py-0.5 text-[10px] font-medium text-zinc-500 dark:border-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-300"
+                    >
+                        {t}
+                    </span>
                 ))}
             </div>
             <div className="text-xs text-zinc-400 dark:text-zinc-600 mr-4 w-24 text-right">{project.updatedAt}</div>
@@ -918,6 +1196,7 @@ const ProjectRow = ({ project, onClick, onRename, onDelete, onShare }: any) => {
                     onRename={onRename}
                     onDelete={onDelete}
                     onShare={onShare}
+                    language={language}
                 />
             </div>
         </div>
@@ -1034,7 +1313,7 @@ const NewProjectModal = ({ onClose }: { onClose: () => void }) => {
               <div className="space-y-4">
                  <div><label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">Title</label><input className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm text-zinc-900 dark:text-zinc-100" placeholder="Project Name" value={title} onChange={e => setTitle(e.target.value)} autoFocus /></div>
                  {type === 'resource' && (
-                     <div><label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">URL</label><input className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm text-zinc-900 dark:text-zinc-100" placeholder="https://example.com" value={url} onChange={e => setUrl(e.target.value)} /></div>
+                     <div><label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">URL</label><input className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm text-zinc-900 dark:text-zinc-100" placeholder="https://example.com/research-notes" value={url} onChange={e => setUrl(e.target.value)} /></div>
                  )}
               </div>
               <div className="flex justify-end gap-2 mt-6">
@@ -1046,7 +1325,8 @@ const NewProjectModal = ({ onClose }: { onClose: () => void }) => {
     );
 };
 
-const RenameModal = ({ project, onClose }: { project: any, onClose: () => void }) => {
+const RenameModal = ({ project, onClose, language }: { project: any, onClose: () => void, language: AppLanguage }) => {
+    const copy = getUIText(language);
     const updateTitle = useStore(s => s.updateProjectTitle);
     const [title, setTitle] = useState(project.title);
 
@@ -1060,18 +1340,19 @@ const RenameModal = ({ project, onClose }: { project: any, onClose: () => void }
     return (
         <div className="fixed inset-0 z-[100] bg-zinc-900/20 backdrop-blur-sm flex items-center justify-center p-4">
             <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-2xl w-full max-w-sm p-5 border border-zinc-200 dark:border-zinc-800">
-                <h3 className="text-md font-bold text-zinc-900 dark:text-zinc-100 mb-4">Rename Project</h3>
+                <h3 className="text-md font-bold text-zinc-900 dark:text-zinc-100 mb-4">{copy.common.rename}</h3>
                 <input className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm mb-4 text-zinc-900 dark:text-zinc-100" value={title} onChange={e => setTitle(e.target.value)} autoFocus />
                 <div className="flex justify-end gap-2">
-                    <button onClick={onClose} className="px-3 py-1.5 text-xs text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-800 rounded-lg">Cancel</button>
-                    <button onClick={handleSubmit} className="px-3 py-1.5 text-xs bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-lg">Save</button>
+                    <button onClick={onClose} className="px-3 py-1.5 text-xs text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-800 rounded-lg">{copy.common.cancel}</button>
+                    <button onClick={handleSubmit} className="px-3 py-1.5 text-xs bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-lg">{copy.common.save}</button>
                 </div>
             </div>
         </div>
     );
 };
 
-const ShareModal = ({ entity, type, onClose }: { entity: any, type: 'project' | 'database', onClose: () => void }) => {
+const ShareModal = ({ entity, type, onClose, language }: { entity: any, type: 'project' | 'database', onClose: () => void, language: AppLanguage }) => {
+    const copy = getUIText(language);
     const friends = useStore(s => s.friends);
     const shareProject = useStore(s => s.shareProject);
     const shareDatabase = useStore(s => s.shareDatabase);
@@ -1101,7 +1382,10 @@ const ShareModal = ({ entity, type, onClose }: { entity: any, type: 'project' | 
         setTimeout(() => setCopied(false), 2000);
     };
 
-    const title = type === 'project' ? `Share "${entity.title}"` : `Share Database "${entity}"`;
+    const title =
+        type === 'project'
+            ? copy.shareModal.shareProject.replace('{title}', entity.title)
+            : copy.shareModal.shareDatabase.replace('{name}', entity);
 
     return (
         <div className="fixed inset-0 z-[100] bg-zinc-900/20 backdrop-blur-sm flex items-center justify-center p-4">
@@ -1112,33 +1396,33 @@ const ShareModal = ({ entity, type, onClose }: { entity: any, type: 'project' | 
                 </div>
                 {showLinkTab && (
                     <div className="flex border-b border-zinc-100 dark:border-zinc-800">
-                        <button onClick={() => setActiveTab('friends')} className={`flex-1 py-3 text-xs font-medium text-center transition-colors ${activeTab === 'friends' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800'}`}>Friends</button>
-                        <button onClick={() => setActiveTab('link')} className={`flex-1 py-3 text-xs font-medium text-center transition-colors ${activeTab === 'link' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800'}`}>Invite via Link</button>
+                        <button onClick={() => setActiveTab('friends')} className={`m-1 flex-1 rounded-xl border px-3 py-2.5 text-xs font-medium text-center transition-all ${activeTab === 'friends' ? `${SOFT_ACTIVE_SURFACE} text-blue-600 dark:text-blue-300` : `border-transparent text-zinc-500 dark:text-zinc-400 ${SOFT_HOVER_SURFACE}`}`}>{copy.common.friends}</button>
+                        <button onClick={() => setActiveTab('link')} className={`m-1 flex-1 rounded-xl border px-3 py-2.5 text-xs font-medium text-center transition-all ${activeTab === 'link' ? `${SOFT_ACTIVE_SURFACE} text-blue-600 dark:text-blue-300` : `border-transparent text-zinc-500 dark:text-zinc-400 ${SOFT_HOVER_SURFACE}`}`}>{copy.common.inviteViaLink}</button>
                     </div>
                 )}
                 <div className="p-4 min-h-[200px]">
                     {activeTab === 'friends' ? (
                         <div className="space-y-2">
-                             {type === 'database' && (<div className="mb-3 p-2 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-100 dark:border-blue-800 text-[10px] text-blue-600 dark:text-blue-300">ℹ️ Databases can only be shared within LinkVerse Chat.</div>)}
+                             {type === 'database' && (<div className="mb-3 p-2 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-100 dark:border-blue-800 text-[10px] text-blue-600 dark:text-blue-300">ℹ️ {copy.shareModal.databaseHint}</div>)}
                             {friends.map(f => (
-                                <div key={f.id} onClick={() => toggleFriend(f.id)} className={`flex items-center p-2 rounded-lg cursor-pointer border transition-all ${selectedFriends.includes(f.id) ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800' : 'bg-transparent border-transparent hover:bg-zinc-50 dark:hover:bg-zinc-800'}`}>
+                                <div key={f.id} onClick={() => toggleFriend(f.id)} className={`flex items-center p-2 rounded-2xl cursor-pointer border transition-all ${selectedFriends.includes(f.id) ? `${SOFT_ACTIVE_SURFACE}` : `bg-transparent border-transparent ${SOFT_HOVER_SURFACE}`}`}>
                                     <div className="w-8 h-8 bg-zinc-200 dark:bg-zinc-700 rounded-full flex items-center justify-center text-xs font-bold text-zinc-600 dark:text-zinc-300 mr-3">{f.avatar}</div>
                                     <div className="flex-1"><div className="text-xs font-medium text-zinc-700 dark:text-zinc-300">{f.name}</div><div className="text-[10px] text-zinc-400">{f.status}</div></div>
-                                    {selectedFriends.includes(f.id) && <div className="w-2 h-2 rounded-full bg-blue-500"></div>}
+                                    {selectedFriends.includes(f.id) && <div className="w-2 h-2 rounded-full bg-blue-400 dark:bg-blue-300"></div>}
                                 </div>
                             ))}
                         </div>
                     ) : (
                         <div className="flex flex-col gap-4 items-center justify-center h-full pt-4">
                             <div className="p-3 bg-zinc-50 dark:bg-zinc-800 rounded-full text-zinc-400"><IconLink className="w-8 h-8" /></div>
-                            <p className="text-xs text-center text-zinc-500 px-4">Anyone with the link can view this project.</p>
-                            <button onClick={copyLink} className="w-full py-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-lg text-xs font-medium hover:bg-zinc-800 dark:hover:bg-zinc-200 transition-colors">{copied ? 'Copied!' : 'Copy Link'}</button>
+                            <p className="text-xs text-center text-zinc-500 px-4">{copy.shareModal.linkHint}</p>
+                            <button onClick={copyLink} className="w-full py-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-lg text-xs font-medium hover:bg-zinc-800 dark:hover:bg-zinc-200 transition-colors">{copied ? copy.common.copied : copy.common.copyLink}</button>
                         </div>
                     )}
                 </div>
                 {activeTab === 'friends' && (
                     <div className="p-4 border-t border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 flex justify-end">
-                        <button onClick={handleShare} disabled={selectedFriends.length === 0} className={`px-4 py-2 rounded-lg text-xs font-medium transition-colors ${selectedFriends.length > 0 ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-zinc-200 dark:bg-zinc-800 text-zinc-400 cursor-not-allowed'}`}>Send Invite ({selectedFriends.length})</button>
+                        <button onClick={handleShare} disabled={selectedFriends.length === 0} className={`px-4 py-2 rounded-lg text-xs font-medium transition-colors ${selectedFriends.length > 0 ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-zinc-200 dark:bg-zinc-800 text-zinc-400 cursor-not-allowed'}`}>{copy.shareModal.sendInvite} ({selectedFriends.length})</button>
                     </div>
                 )}
             </div>
@@ -1146,9 +1430,199 @@ const ShareModal = ({ entity, type, onClose }: { entity: any, type: 'project' | 
     );
 };
 
-const GeneratorView = () => {
+const DatabaseEditorModal = ({
+    draft,
+    onChange,
+    onClose,
+    onSave,
+    onDelete,
+    language,
+}: {
+    draft: DatabaseDraft,
+    onChange: (nextDraft: DatabaseDraft) => void,
+    onClose: () => void,
+    onSave: () => void,
+    onDelete?: () => void,
+    language: AppLanguage,
+}) => {
+    const copy = getUIText(language);
+    const isEmoji = draft.iconType === 'emoji';
+
+    return (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-zinc-950/28 p-4 backdrop-blur-sm">
+            <div className="w-full max-w-md rounded-[30px] border border-zinc-200/90 bg-white/96 p-6 shadow-[0_28px_80px_rgba(15,23,42,0.16)] backdrop-blur-xl dark:border-white/[0.08] dark:bg-zinc-900/96">
+                <div className="mb-6 flex items-start justify-between gap-4">
+                    <div>
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-400">
+                            {copy.libraryView.databases}
+                        </div>
+                        <h3 className="mt-2 text-xl font-semibold text-zinc-900 dark:text-zinc-100">
+                            {draft.mode === 'create' ? copy.libraryView.createTitle : copy.libraryView.editTitle}
+                        </h3>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="rounded-2xl p-2 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+                    >
+                        <IconX className="w-4 h-4" />
+                    </button>
+                </div>
+
+                <div className="mb-6 flex items-center gap-4 rounded-[24px] border border-zinc-200/80 bg-zinc-50/90 px-4 py-4 dark:border-zinc-800 dark:bg-zinc-950/60">
+                    <div
+                        className="relative flex h-12 w-12 items-center justify-center rounded-[18px] border text-lg shadow-sm"
+                        style={getDatabaseBadgeStyle(draft.color, 'medium')}
+                    >
+                        <DatabaseGlyph
+                            database={{
+                                name: draft.name || 'Database',
+                                color: draft.color,
+                                iconType: draft.iconType,
+                                emoji: draft.emoji,
+                            }}
+                            className="h-5 w-5"
+                            textClassName="text-lg"
+                        />
+                        <span
+                            className="absolute -bottom-1 -right-1 h-3 w-3 rounded-full border-2 border-white dark:border-zinc-900"
+                            style={{ backgroundColor: draft.color }}
+                        />
+                    </div>
+                    <div className="min-w-0">
+                        <div className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                            {draft.name.trim() || copy.libraryView.databaseName}
+                        </div>
+                        <div className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                            {isEmoji ? copy.libraryView.emojiIcon : copy.libraryView.folderIcon}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="space-y-5">
+                    <div>
+                        <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-zinc-400">
+                            {copy.libraryView.databaseName}
+                        </label>
+                        <input
+                            autoFocus
+                            value={draft.name}
+                            onChange={(event) => onChange({ ...draft, name: event.target.value })}
+                            className="w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition-colors focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-zinc-500"
+                            placeholder={copy.libraryView.dbName}
+                        />
+                    </div>
+
+                    <div>
+                        <div className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-zinc-400">
+                            {copy.libraryView.iconLabel}
+                        </div>
+                        <div className="grid grid-cols-2 gap-1 rounded-[20px] border border-zinc-200/80 bg-zinc-50/90 p-1 dark:border-zinc-800 dark:bg-zinc-950/70">
+                            <button
+                                type="button"
+                                onClick={() => onChange({ ...draft, iconType: 'folder' })}
+                                className={`rounded-2xl border px-4 py-3 text-sm font-medium transition-all ${
+                                    draft.iconType === 'folder'
+                                        ? 'border-zinc-200/80 bg-white text-zinc-900 shadow-sm dark:border-white/[0.08] dark:bg-zinc-900 dark:text-zinc-100'
+                                        : 'border-transparent bg-transparent text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100'
+                                }`}
+                            >
+                                {copy.libraryView.folderIcon}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => onChange({ ...draft, iconType: 'emoji' })}
+                                className={`rounded-2xl border px-4 py-3 text-sm font-medium transition-all ${
+                                    draft.iconType === 'emoji'
+                                        ? 'border-zinc-200/80 bg-white text-zinc-900 shadow-sm dark:border-white/[0.08] dark:bg-zinc-900 dark:text-zinc-100'
+                                        : 'border-transparent bg-transparent text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100'
+                                }`}
+                            >
+                                {copy.libraryView.emojiIcon}
+                            </button>
+                        </div>
+                        {isEmoji && (
+                            <input
+                                value={draft.emoji}
+                                onChange={(event) => onChange({ ...draft, emoji: event.target.value.slice(0, 4) })}
+                                className="mt-3 w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition-colors focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-zinc-500"
+                                placeholder={copy.libraryView.emojiPlaceholder}
+                            />
+                        )}
+                    </div>
+
+                    <div>
+                        <div className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-zinc-400">
+                            {copy.libraryView.colorLabel}
+                        </div>
+                        <div className="rounded-[20px] border border-zinc-200/80 bg-zinc-50/90 p-3 dark:border-zinc-800 dark:bg-zinc-950/70">
+                            <div className="grid grid-cols-7 gap-2">
+                            {DATABASE_COLOR_SPECTRUM.map((color) => {
+                                const selected = color === draft.color;
+                                return (
+                                    <button
+                                        key={color}
+                                        type="button"
+                                        onClick={() => onChange({ ...draft, color })}
+                                        className={`relative h-9 w-9 rounded-full border shadow-sm transition-transform hover:scale-[1.04] ${
+                                            selected
+                                                ? 'scale-[1.08] border-zinc-900 dark:border-zinc-100'
+                                                : 'border-white dark:border-zinc-800'
+                                        }`}
+                                        style={{ backgroundColor: color }}
+                                        aria-label={color}
+                                    >
+                                        {selected && (
+                                            <span className="absolute inset-[9px] rounded-full border border-white/80 bg-white/25 dark:border-zinc-900/70 dark:bg-zinc-900/20" />
+                                        )}
+                                    </button>
+                                );
+                            })}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="mt-8 flex items-center justify-between gap-3">
+                    <div>
+                        {onDelete && (
+                            <button
+                                type="button"
+                                onClick={onDelete}
+                                className="inline-flex items-center gap-2 rounded-2xl border border-red-200 px-4 py-2.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 dark:border-red-900/40 dark:text-red-300 dark:hover:bg-red-900/20"
+                            >
+                                <IconTrash className="w-4 h-4" />
+                                {copy.common.delete}
+                            </button>
+                        )}
+                    </div>
+                    <div className="flex items-center gap-3">
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            className="rounded-2xl px-4 py-2.5 text-sm font-medium text-zinc-500 transition-colors hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                        >
+                            {copy.common.cancel}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={onSave}
+                            disabled={!draft.name.trim() || (draft.iconType === 'emoji' && !draft.emoji.trim())}
+                            className="rounded-2xl bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                        >
+                            {copy.libraryView.saveDatabase}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const GeneratorView = ({ language }: { language: AppLanguage }) => {
+    const copy = getUIText(language);
     const generateGraph = useStore(s => s.generateGraphFromDatabases);
-    const availableTags = useStore(s => s.availableTags).filter(t => t !== 'Inbox');
+    const databases = useStore(s => s.databases);
     const [selectedTags, setSelectedTags] = useState<string[]>([]);
     const [isGenerating, setIsGenerating] = useState(false);
 
@@ -1168,26 +1642,44 @@ const GeneratorView = () => {
          <div className="flex items-center justify-center h-full flex-col bg-[#FDFDFD] dark:bg-zinc-950 p-4">
              <div className="p-8 bg-white dark:bg-zinc-900 rounded-2xl shadow-xl border border-zinc-100 dark:border-zinc-800 max-w-lg w-full text-center">
                 <div className="w-16 h-16 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-full flex items-center justify-center mx-auto mb-6"><IconGraph className="w-8 h-8" /></div>
-                <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-100 mb-2">Context Graph Generator</h2>
-                <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-8">Select databases to generate a structured mind graph from your notes, research, and saved resources.</p>
+                <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-100 mb-2">{copy.generatorView.title}</h2>
+                <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-8">{copy.generatorView.subtitle}</p>
                 <div className="bg-zinc-50 dark:bg-zinc-800 rounded-xl p-5 mb-8 text-left">
-                    <h4 className="text-xs font-bold text-zinc-400 uppercase mb-3 tracking-wider">Select Context Sources</h4>
+                    <h4 className="text-xs font-bold text-zinc-400 uppercase mb-3 tracking-wider">{copy.generatorView.selectSources}</h4>
                     <div className="flex flex-wrap gap-2">
-                        {availableTags.map(tag => (
-                            <button key={tag} onClick={() => toggleTag(tag)} className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${selectedTags.includes(tag) ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-white dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 border-zinc-200 dark:border-zinc-600 hover:border-blue-300'}`}>{tag}</button>
+                        {databases.map(database => (
+                            <button
+                                key={database.name}
+                                onClick={() => toggleTag(database.name)}
+                                className={`flex items-center gap-2 px-3 py-1.5 rounded-2xl text-xs font-medium transition-all border ${
+                                    selectedTags.includes(database.name)
+                                        ? `text-zinc-900 dark:text-zinc-100 ${DATABASE_RAIL_ACTIVE_SURFACE}`
+                                        : `bg-white/80 dark:bg-zinc-950/80 text-zinc-600 dark:text-zinc-300 border-zinc-200/80 dark:border-zinc-800 ${DATABASE_RAIL_HOVER_SURFACE}`
+                                }`}
+                                style={selectedTags.includes(database.name) ? getDatabaseInteractionStyle(database.color, 'selected') : undefined}
+                            >
+                                <span
+                                    className="flex h-6 w-6 items-center justify-center rounded-xl border"
+                                    style={getDatabaseBadgeStyle(database.color)}
+                                >
+                                    <DatabaseGlyph database={database} className="h-3 w-3" textClassName="text-xs" />
+                                </span>
+                                <span>{database.name}</span>
+                            </button>
                         ))}
-                        {availableTags.length === 0 && <span className="text-xs text-zinc-400 italic">No databases created yet.</span>}
+                        {databases.length === 0 && <span className="text-xs text-zinc-400 italic">{copy.generatorView.noDatabases}</span>}
                     </div>
                 </div>
                 <button onClick={handleGenerate} disabled={selectedTags.length === 0 || isGenerating} className={`w-full py-3 rounded-xl font-semibold text-sm transition-all flex items-center justify-center gap-2 ${selectedTags.length > 0 ? 'bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 hover:scale-[1.02] shadow-lg' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400 cursor-not-allowed'}`}>
-                    {isGenerating ? <><div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> Generating Mind Graph...</> : <><IconMagic className="w-4 h-4" /> Generate Mind Graph</>}
+                    {isGenerating ? <><div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> {copy.generatorView.generating}</> : <><IconMagic className="w-4 h-4" /> {copy.generatorView.generate}</>}
                 </button>
              </div>
          </div>
     );
 };
 
-const DashboardView = ({ onCreateProject, onRename, onDelete, onShare }: any) => {
+const DashboardView = ({ onCreateProject, onRename, onDelete, onShare, language }: any) => {
+    const copy = getUIText(language);
     const projects = useStore(s => s.projects);
     const openProject = useStore(s => s.openProject);
 
@@ -1200,16 +1692,16 @@ const DashboardView = ({ onCreateProject, onRename, onDelete, onShare }: any) =>
              {/* Header */}
              <div className="flex items-center justify-between mb-8">
                  <div>
-                    <h2 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-100 tracking-tight">Workspace</h2>
-                    <p className="text-zinc-500 dark:text-zinc-400 mt-1 text-sm">Map strategy, notes, and references in one relationship-first workspace.</p>
+                    <h2 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-100 tracking-tight">{copy.dashboard.title}</h2>
+                    <p className="text-zinc-500 dark:text-zinc-400 mt-1 text-sm">{copy.dashboard.subtitle}</p>
                  </div>
-                 <button onClick={onCreateProject} className="flex items-center gap-2 bg-zinc-900 dark:bg-zinc-100 hover:bg-zinc-800 dark:hover:bg-zinc-200 text-white dark:text-zinc-900 px-4 py-2 rounded-lg font-medium text-sm transition-colors shadow-sm"><IconPlus /> New Project</button>
+                 <button onClick={onCreateProject} className="flex items-center gap-2 bg-zinc-900 dark:bg-zinc-100 hover:bg-zinc-800 dark:hover:bg-zinc-200 text-white dark:text-zinc-900 px-4 py-2 rounded-lg font-medium text-sm transition-colors shadow-sm"><IconPlus /> {copy.dashboard.newProject}</button>
              </div>
 
              {/* Recent Files - Top Section (Grid/Cards) */}
              <div className="mb-10">
                  <div className="flex items-center justify-between mb-4">
-                    <h4 className="text-xs font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider">Recent Files</h4>
+                    <h4 className="text-xs font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider">{copy.dashboard.recentFiles}</h4>
                  </div>
                  {recentProjects.length > 0 ? (
                     <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
@@ -1221,18 +1713,19 @@ const DashboardView = ({ onCreateProject, onRename, onDelete, onShare }: any) =>
                                 onRename={onRename} 
                                 onDelete={onDelete} 
                                 onShare={onShare} 
+                                language={language}
                             />
                         ))}
                     </div>
                  ) : (
-                    <div className="text-sm text-zinc-400 italic">No recent files.</div>
+                    <div className="text-sm text-zinc-400 italic">{copy.dashboard.noRecentFiles}</div>
                  )}
              </div>
 
              {/* All Files - Bottom Section (List/Rows) */}
              <div>
                  <div className="flex items-center justify-between mb-4 border-b border-zinc-100 dark:border-zinc-800 pb-2">
-                    <h4 className="text-xs font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider">All Files</h4>
+                    <h4 className="text-xs font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider">{copy.dashboard.allFiles}</h4>
                  </div>
                  <div className="flex flex-col gap-2 pb-10">
                      {projects.length > 0 ? (
@@ -1244,10 +1737,11 @@ const DashboardView = ({ onCreateProject, onRename, onDelete, onShare }: any) =>
                                 onRename={onRename} 
                                 onDelete={onDelete} 
                                 onShare={onShare} 
+                                language={language}
                             />
                         ))
                      ) : (
-                        <div className="text-sm text-zinc-400 italic">No files found.</div>
+                        <div className="text-sm text-zinc-400 italic">{copy.dashboard.noFilesFound}</div>
                      )}
                  </div>
              </div>
@@ -1294,73 +1788,210 @@ const StackPreview = ({ tag, projects, x, y }: { tag: string, projects: any[], x
     );
 };
 
-const LibraryView = ({ onRename, onDelete, onShare, onShareDatabase }: any) => {
+const LibraryView = ({ onRename, onDelete, onShare, onShareDatabase, language }: any) => {
+    const copy = getUIText(language);
     const projects = useStore(s => s.projects);
-    const availableTags = useStore(s => s.availableTags);
+    const databases = useStore(s => s.databases);
     const openProject = useStore(s => s.openProject);
     const createDatabase = useStore(s => s.createDatabase);
-    const renameDatabase = useStore(s => s.renameDatabase);
+    const updateDatabase = useStore(s => s.updateDatabase);
     const deleteDatabase = useStore(s => s.deleteDatabase);
     const isLibrarySidebarCollapsed = useStore(s => s.isLibrarySidebarCollapsed);
     const toggleLibrarySidebar = useStore(s => s.toggleLibrarySidebar);
     const [selectedTag, setSelectedTag] = useState<string | null>(null);
-    const [isCreatingDB, setIsCreatingDB] = useState(false);
-    const [newDBName, setNewDBName] = useState('');
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
     const [hoveredDB, setHoveredDB] = useState<{ tag: string, x: number, y: number } | null>(null);
-
-    const handleCreateDB = () => { if (newDBName.trim()) { createDatabase(newDBName.trim()); setNewDBName(''); setIsCreatingDB(false); } };
+    const [databaseDraft, setDatabaseDraft] = useState<DatabaseDraft | null>(null);
+    const databaseMap = useMemo(() => new Map(databases.map((database) => [database.name, database])), [databases]);
+    const activeDatabase = selectedTag && selectedTag !== 'Inbox' ? databaseMap.get(selectedTag) || null : null;
+    const databaseCounts = useMemo(
+        () =>
+            new Map(
+                databases.map((database) => [
+                    database.name,
+                    projects.filter((project) => project.databaseTags.includes(database.name)).length,
+                ])
+            ),
+        [databases, projects]
+    );
     const databaseProjects = useMemo(() => projects.filter(p => { if (selectedTag && selectedTag !== 'Inbox') return p.databaseTags.includes(selectedTag); if (selectedTag === 'Inbox') return false; const isOnlyInbox = p.databaseTags.length === 1 && p.databaseTags[0] === 'Inbox'; const isNoTag = p.databaseTags.length === 0; return !isOnlyInbox && !isNoTag; }), [projects, selectedTag]);
     const drafts = useMemo(() => projects.filter(p => { const isOnlyInbox = p.databaseTags.length === 1 && p.databaseTags[0] === 'Inbox'; const isNoTag = p.databaseTags.length === 0; if (selectedTag && selectedTag !== 'Inbox') return false; return isOnlyInbox || isNoTag; }), [projects, selectedTag]);
+
+    useEffect(() => {
+        if (selectedTag && selectedTag !== 'Inbox' && !databaseMap.has(selectedTag)) {
+            setSelectedTag(null);
+        }
+    }, [databaseMap, selectedTag]);
+
+    const handleSaveDatabase = () => {
+        if (!databaseDraft) return;
+
+        const payload: DatabaseDefinition = {
+            name: databaseDraft.name.trim(),
+            color: databaseDraft.color,
+            iconType: databaseDraft.iconType,
+            emoji: databaseDraft.iconType === 'emoji' ? databaseDraft.emoji.trim() : undefined,
+        };
+
+        if (!payload.name) return;
+
+        const duplicateExists =
+            payload.name !== (databaseDraft.originalName || '') &&
+            databaseMap.has(payload.name);
+
+        if (duplicateExists) {
+            window.alert(copy.libraryView.duplicateName);
+            return;
+        }
+
+        if (databaseDraft.mode === 'create') {
+            createDatabase(payload.name, payload);
+        } else {
+            updateDatabase(databaseDraft.originalName || payload.name, payload);
+            if (selectedTag === databaseDraft.originalName && databaseDraft.originalName !== payload.name) {
+                setSelectedTag(payload.name);
+            }
+        }
+
+        setDatabaseDraft(null);
+    };
+
+    const handleDeleteDatabase = () => {
+        if (!databaseDraft?.originalName) return;
+        const shouldDelete = window.confirm(copy.libraryView.deleteConfirm.replace('{name}', databaseDraft.originalName));
+        if (!shouldDelete) return;
+        deleteDatabase(databaseDraft.originalName);
+        if (selectedTag === databaseDraft.originalName) {
+            setSelectedTag(null);
+        }
+        setDatabaseDraft(null);
+    };
 
     return (
         <div className="flex h-full relative">
             {hoveredDB && <StackPreview tag={hoveredDB.tag} projects={projects.filter(p => p.databaseTags.includes(hoveredDB.tag))} x={hoveredDB.x} y={hoveredDB.y} />}
-            <div className={`border-r border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 transition-all duration-300 ease-in-out flex flex-col ${isLibrarySidebarCollapsed ? 'w-12' : 'w-64'}`}>
+            <div className={`border-r border-zinc-200/80 dark:border-zinc-800 bg-[#F7F7F4]/90 dark:bg-zinc-950/92 transition-all duration-300 ease-in-out flex flex-col backdrop-blur-xl ${isLibrarySidebarCollapsed ? 'w-12' : 'w-[280px]'}`}>
                 <div className="flex items-center justify-between p-4 mb-2">
-                     {!isLibrarySidebarCollapsed && <h3 className="font-bold text-zinc-800 dark:text-zinc-200 flex items-center gap-2 text-sm"><IconDatabase className="w-4 h-4" /> Databases</h3>}
+                     {!isLibrarySidebarCollapsed && <h3 className="font-bold text-zinc-800 dark:text-zinc-200 flex items-center gap-2 text-sm"><IconDatabase className="w-4 h-4" /> {copy.libraryView.databases}</h3>}
                      <div className="flex gap-1">
-                        {!isLibrarySidebarCollapsed && <button onClick={() => setIsCreatingDB(true)} className="p-1 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded text-zinc-500" title="Create Database"><IconPlus className="w-3.5 h-3.5" /></button>}
+                        {!isLibrarySidebarCollapsed && <button onClick={() => setDatabaseDraft(createDatabaseDraft(undefined, 'create'))} className="p-1 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded text-zinc-500" title={copy.libraryView.createDatabase}><IconPlus className="w-3.5 h-3.5" /></button>}
                         <button onClick={toggleLibrarySidebar} className="p-1 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded text-zinc-500" title={isLibrarySidebarCollapsed ? "Expand" : "Collapse"}>{isLibrarySidebarCollapsed ? <IconArrowRight className="w-3.5 h-3.5" /> : <IconSidebar className="w-3.5 h-3.5" />}</button>
                      </div>
                 </div>
                 {!isLibrarySidebarCollapsed && (
                     <div className="flex-1 overflow-y-auto px-4 pb-4">
-                        {isCreatingDB && (
-                            <div className="mb-2 flex gap-1">
-                                <input className="w-full px-2 py-1 text-xs border border-zinc-300 dark:border-zinc-700 rounded bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-200 outline-none focus:border-blue-500" placeholder="DB Name" value={newDBName} onChange={e => setNewDBName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleCreateDB()} autoFocus />
-                                <button onClick={() => setIsCreatingDB(false)} className="text-zinc-400 hover:text-zinc-600"><IconX className="w-3 h-3"/></button>
-                            </div>
-                        )}
-                        <div className="space-y-1">
+                        <div className="space-y-2">
                             <button 
                                 onClick={() => setSelectedTag(null)} 
-                                className={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-2 transition-all ${selectedTag === null ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 font-medium shadow-md' : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}
+                                className={`w-full text-left px-3 py-2.5 rounded-[22px] border text-sm flex items-center gap-3 transition-all ${
+                                    selectedTag === null
+                                        ? `${DATABASE_RAIL_ACTIVE_SURFACE} font-medium text-zinc-900 dark:text-zinc-100`
+                                        : `border-transparent text-zinc-600 dark:text-zinc-400 ${DATABASE_RAIL_HOVER_SURFACE}`
+                                }`}
                             >
-                                <IconGrid className="w-4 h-4" />
-                                <span>All Knowledge</span>
+                                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[18px] border border-zinc-200/80 bg-white/80 text-zinc-600 shadow-sm dark:border-zinc-800 dark:bg-zinc-950/80 dark:text-zinc-300">
+                                    <IconGrid className="w-4 h-4" />
+                                </span>
+                                <span>{copy.libraryView.allKnowledge}</span>
                             </button>
 
-                            {availableTags.filter(t => t !== 'Inbox').map(tag => (
-                                <div key={tag} className="relative group flex items-center" onMouseEnter={(e) => { const rect = e.currentTarget.getBoundingClientRect(); setHoveredDB({ tag, x: rect.right, y: rect.top }); }} onMouseLeave={() => setHoveredDB(null)}>
-                                    <button onClick={() => setSelectedTag(tag === selectedTag ? null : tag)} className={`flex-1 text-left px-3 py-2 rounded-lg text-sm flex justify-between items-center relative z-10 ${selectedTag === tag ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 font-medium' : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}>
-                                        <div className="flex items-center gap-2"><IconFolder className="w-4 h-4 opacity-70" /><span className="truncate">{tag}</span></div>
-                                    </button>
-                                    <div className="absolute right-2 z-20"><DatabaseMenu tag={tag} onRename={(old: string) => { const newName = prompt("Rename Database", old); if (newName && newName !== old) renameDatabase(old, newName); }} onDelete={(name: string) => { if (confirm(`Delete database "${name}"? Projects inside will lose this tag.`)) deleteDatabase(name); }} onShare={(name: string) => onShareDatabase(name)} /></div>
-                                </div>
-                            ))}
+                            {databases.map((database) => {
+                                const isActive = selectedTag === database.name;
+                                const isHovered = hoveredDB?.tag === database.name;
+                                const stateStyle = getDatabaseInteractionStyle(
+                                    database.color,
+                                    isActive ? 'selected' : isHovered ? 'hover' : 'rest'
+                                );
+                                const databaseCount = databaseCounts.get(database.name) || 0;
+
+                                return (
+                                    <div key={database.name} className="relative group flex items-center" onMouseEnter={(e) => { const rect = e.currentTarget.getBoundingClientRect(); setHoveredDB({ tag: database.name, x: rect.right, y: rect.top }); }} onMouseLeave={() => setHoveredDB(null)}>
+                                        <button
+                                            onClick={() => setSelectedTag(database.name === selectedTag ? null : database.name)}
+                                            className={`relative z-10 flex flex-1 items-center justify-between rounded-[22px] border px-3 py-2.5 text-left text-sm transition-all ${
+                                                isActive
+                                                    ? `${DATABASE_RAIL_ACTIVE_SURFACE} text-zinc-900 dark:text-zinc-100`
+                                                    : `border-transparent text-zinc-500 dark:text-zinc-400 ${DATABASE_RAIL_HOVER_SURFACE}`
+                                            }`}
+                                            style={stateStyle}
+                                        >
+                                            <div className="flex min-w-0 items-center gap-3">
+                                                <div
+                                                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[18px] border shadow-sm"
+                                                    style={getDatabaseBadgeStyle(database.color)}
+                                                >
+                                                    <DatabaseGlyph
+                                                        database={database}
+                                                        className="h-4 w-4"
+                                                        textClassName="text-sm"
+                                                    />
+                                                </div>
+                                                <div className="min-w-0">
+                                                    <div className="truncate font-medium text-zinc-800 dark:text-zinc-100">{database.name}</div>
+                                                </div>
+                                            </div>
+                                            <div className="rounded-full border border-zinc-200/80 bg-white/80 px-2 py-1 text-[10px] font-semibold text-zinc-400 shadow-sm dark:border-zinc-800 dark:bg-zinc-950/80 dark:text-zinc-500">
+                                                {databaseCount}
+                                            </div>
+                                        </button>
+                                        <div className={`absolute right-2 z-20 transition-opacity ${isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+                                            <DatabaseMenu
+                                                tag={database.name}
+                                                language={language}
+                                                onRename={() => setDatabaseDraft(createDatabaseDraft(database, 'edit'))}
+                                                onDelete={(name: string) => {
+                                                    const shouldDelete = window.confirm(copy.libraryView.deleteConfirm.replace('{name}', name));
+                                                    if (!shouldDelete) return;
+                                                    deleteDatabase(name);
+                                                    if (selectedTag === name) setSelectedTag(null);
+                                                }}
+                                                onShare={(name: string) => onShareDatabase(name)}
+                                            />
+                                        </div>
+                                    </div>
+                                );
+                            })}
                             <div className="pt-2 mt-2 border-t border-zinc-200 dark:border-zinc-800">
-                                <button onClick={() => setSelectedTag('Inbox')} className={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-2 group ${selectedTag === 'Inbox' ? 'bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-400 font-medium' : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}>
-                                    <div className="w-4 h-4 rounded-full bg-orange-200 dark:bg-orange-800/50 flex items-center justify-center text-[8px] font-bold text-orange-700 dark:text-orange-300">{drafts.length}</div><span>Inbox</span>
+                                <button onClick={() => setSelectedTag('Inbox')} className={`w-full text-left px-3 py-2.5 rounded-[22px] border text-sm flex items-center justify-between group transition-all ${
+                                    selectedTag === 'Inbox'
+                                        ? `${DATABASE_RAIL_ACTIVE_SURFACE} text-zinc-900 dark:text-zinc-100 font-medium`
+                                        : `border-transparent text-zinc-500 dark:text-zinc-400 ${DATABASE_RAIL_HOVER_SURFACE}`
+                                }`}>
+                                    <div className="flex items-center gap-3">
+                                        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[18px] border border-zinc-200/80 bg-white/80 text-zinc-500 shadow-sm dark:border-zinc-800 dark:bg-zinc-950/80 dark:text-zinc-300">
+                                            <IconFolder className="w-4 h-4" />
+                                        </span>
+                                        <span>Inbox</span>
+                                    </div>
+                                    <div className="rounded-full border border-zinc-200/80 bg-white/80 px-2 py-1 text-[10px] font-semibold text-zinc-400 shadow-sm dark:border-zinc-800 dark:bg-zinc-950/80 dark:text-zinc-500">{drafts.length}</div>
                                 </button>
                             </div>
                         </div>
                     </div>
                 )}
             </div>
-            <div className="flex-1 p-8 overflow-y-auto bg-white dark:bg-zinc-900">
+            <div className="flex-1 overflow-y-auto bg-[#FCFCFA] px-8 py-8 dark:bg-zinc-900">
                 <div className="flex items-center justify-between mb-8">
-                    <div><h2 className="text-2xl font-semibold text-zinc-800 dark:text-zinc-100 mb-2 tracking-tight">{selectedTag ? `${selectedTag} Database` : 'All Knowledge'}</h2><p className="text-zinc-400 text-sm">Manage graphs, notes, and saved references from a single library.</p></div>
+                    <div>
+                        <div className="mb-3 flex items-center gap-3">
+                            {activeDatabase && (
+                                <div
+                                    className="flex h-11 w-11 items-center justify-center rounded-[18px] border shadow-sm"
+                                    style={getDatabaseBadgeStyle(activeDatabase.color, 'medium')}
+                                >
+                                    <DatabaseGlyph
+                                        database={activeDatabase}
+                                        className="h-5 w-5"
+                                        textClassName="text-lg"
+                                    />
+                                </div>
+                            )}
+                            <div>
+                                <h2 className="text-2xl font-semibold text-zinc-800 dark:text-zinc-100 tracking-tight">{selectedTag || copy.libraryView.allKnowledge}</h2>
+                                <p className="text-zinc-400 text-sm">{copy.libraryView.subtitle}</p>
+                            </div>
+                        </div>
+                    </div>
                     <div className="flex gap-1 bg-zinc-100 dark:bg-zinc-900 p-1 rounded-lg">
                         <button onClick={() => setViewMode('grid')} className={`p-1.5 rounded ${viewMode === 'grid' ? 'bg-white dark:bg-zinc-800 shadow-sm text-zinc-800 dark:text-zinc-200' : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'}`}><IconGrid className="w-4 h-4" /></button>
                         <button onClick={() => setViewMode('list')} className={`p-1.5 rounded ${viewMode === 'list' ? 'bg-white dark:bg-zinc-800 shadow-sm text-zinc-800 dark:text-zinc-200' : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'}`}><IconList className="w-4 h-4" /></button>
@@ -1368,22 +1999,33 @@ const LibraryView = ({ onRename, onDelete, onShare, onShareDatabase }: any) => {
                 </div>
                 {selectedTag !== 'Inbox' && (
                     <div className="mb-10">
-                        <h4 className="text-xs font-bold text-zinc-400 uppercase tracking-wider mb-4 border-b border-zinc-100 dark:border-zinc-800 pb-2">Projects ({databaseProjects.length})</h4>
-                        {databaseProjects.length === 0 ? <div className="text-sm text-zinc-400 italic">No projects found in this view.</div> : (viewMode === 'grid' ? <div className="grid grid-cols-2 md:grid-cols-4 gap-4">{databaseProjects.map(p => <ProjectCard key={p.id} project={p} onClick={() => openProject(p.id)} onRename={onRename} onDelete={onDelete} onShare={onShare} />)}</div> : <div className="flex flex-col gap-2">{databaseProjects.map(p => <ProjectRow key={p.id} project={p} onClick={() => openProject(p.id)} onRename={onRename} onDelete={onDelete} onShare={onShare} />)}</div>)}
+                        <h4 className="text-xs font-bold text-zinc-400 uppercase tracking-wider mb-4 border-b border-zinc-100 dark:border-zinc-800 pb-2">{copy.libraryView.projects} ({databaseProjects.length})</h4>
+                        {databaseProjects.length === 0 ? <div className="text-sm text-zinc-400 italic">{copy.libraryView.noProjectsFound}</div> : (viewMode === 'grid' ? <div className="grid grid-cols-2 md:grid-cols-4 gap-4">{databaseProjects.map(p => <ProjectCard key={p.id} project={p} language={language} onClick={() => openProject(p.id)} onRename={onRename} onDelete={onDelete} onShare={onShare} />)}</div> : <div className="flex flex-col gap-2">{databaseProjects.map(p => <ProjectRow key={p.id} project={p} language={language} onClick={() => openProject(p.id)} onRename={onRename} onDelete={onDelete} onShare={onShare} />)}</div>)}
                     </div>
                 )}
                 {(!selectedTag || selectedTag === 'Inbox') && (
                     <div>
-                        <h4 className="text-xs font-bold text-zinc-400 uppercase tracking-wider mb-4 border-b border-zinc-100 dark:border-zinc-800 pb-2">Inbox / Drafts ({drafts.length})</h4>
-                        {drafts.length === 0 ? <div className="text-sm text-zinc-400 italic">No drafts in inbox.</div> : <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">{drafts.map(p => <div key={p.id} onClick={() => openProject(p.id)} className="p-4 border border-zinc-100 dark:border-zinc-800 rounded-lg hover:border-blue-300 dark:hover:border-blue-700 transition-colors bg-zinc-50/50 dark:bg-zinc-800/30 cursor-pointer group"><div className="flex items-center justify-between mb-2"><div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-orange-400"></span><h4 className="font-semibold text-sm text-zinc-700 dark:text-zinc-200 truncate max-w-[150px]">{p.title}</h4></div><span className="text-[10px] text-zinc-400">Draft</span></div><p className="text-xs text-zinc-500 dark:text-zinc-400 line-clamp-3 mb-3">{p.content || p.summary || 'No content'}</p><div className="flex justify-between items-center"><div className="flex gap-1"><span className="px-1.5 py-0.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded text-[9px] text-orange-400">Inbox</span></div><span className="text-[10px] text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity">Open &rarr;</span></div></div>)}</div>}
+                        <h4 className="text-xs font-bold text-zinc-400 uppercase tracking-wider mb-4 border-b border-zinc-100 dark:border-zinc-800 pb-2">{copy.libraryView.inboxDrafts} ({drafts.length})</h4>
+                        {drafts.length === 0 ? <div className="text-sm text-zinc-400 italic">{copy.libraryView.noDrafts}</div> : <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">{drafts.map(p => <div key={p.id} onClick={() => openProject(p.id)} className="p-4 border border-zinc-100 dark:border-zinc-800 rounded-lg hover:border-blue-300 dark:hover:border-blue-700 transition-colors bg-zinc-50/50 dark:bg-zinc-800/30 cursor-pointer group"><div className="flex items-center justify-between mb-2"><div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-orange-400"></span><h4 className="font-semibold text-sm text-zinc-700 dark:text-zinc-200 truncate max-w-[150px]">{p.title}</h4></div><span className="text-[10px] text-zinc-400">{copy.libraryView.draft}</span></div><p className="text-xs text-zinc-500 dark:text-zinc-400 line-clamp-3 mb-3">{p.content || p.summary || copy.libraryView.noContent}</p><div className="flex justify-between items-center"><div className="flex gap-1"><span className="px-1.5 py-0.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded text-[9px] text-orange-400">Inbox</span></div><span className="text-[10px] text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity">{copy.libraryView.openAction} &rarr;</span></div></div>)}</div>}
                     </div>
                 )}
             </div>
+            {databaseDraft && (
+                <DatabaseEditorModal
+                    draft={databaseDraft}
+                    onChange={setDatabaseDraft}
+                    onClose={() => setDatabaseDraft(null)}
+                    onSave={handleSaveDatabase}
+                    onDelete={databaseDraft.mode === 'edit' ? handleDeleteDatabase : undefined}
+                    language={language}
+                />
+            )}
         </div>
     );
 };
 
-const FriendsView = ({ mode }: { mode: 'friends' | 'team' }) => {
+const FriendsView = ({ mode, language }: { mode: 'friends' | 'team', language: AppLanguage }) => {
+    const copy = getUIText(language);
     // ... (Existing implementation)
     const friends = useStore(s => s.friends);
     const groups = useStore(s => s.groups);
@@ -1422,24 +2064,24 @@ const FriendsView = ({ mode }: { mode: 'friends' | 'team' }) => {
     return (
         <div className="flex h-full bg-white dark:bg-zinc-900">
             <div className="w-72 border-r border-zinc-200 dark:border-zinc-800 flex flex-col bg-zinc-50 dark:bg-zinc-950">
-                <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 flex justify-between items-center"><h2 className="text-lg font-bold text-zinc-800 dark:text-zinc-200">{mode === 'team' ? 'Teams' : 'Friends'}</h2><button className="p-1 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded text-zinc-500"><IconPlus className="w-4 h-4" /></button></div>
-                <div className="flex-1 overflow-y-auto">{displayList.map((item: any) => (<div key={item.id} onClick={() => { setSelectedId(item.id); setIsSelectionMode(false); }} className={`flex items-center px-4 py-3 cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors ${selectedId === item.id ? 'bg-white dark:bg-zinc-900 border-l-4 border-blue-500 shadow-sm' : 'border-l-4 border-transparent'}`}><div className={`w-10 h-10 ${mode === 'team' ? 'bg-purple-100 dark:bg-purple-900/30' : 'bg-zinc-200 dark:bg-zinc-700'} rounded-lg flex items-center justify-center text-lg mr-3`}>{item.avatar}</div><div className="flex-1 min-w-0"><h3 className="font-semibold text-zinc-800 dark:text-zinc-200 text-sm truncate">{item.name}</h3><p className="text-xs text-zinc-500 truncate">{mode === 'team' ? `${item.members.length} members` : item.status}</p></div></div>))}</div>
+                <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 flex justify-between items-center"><h2 className="text-lg font-bold text-zinc-800 dark:text-zinc-200">{mode === 'team' ? copy.friendsView.teamsTitle : copy.friendsView.friendsTitle}</h2><button className="p-1 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded text-zinc-500"><IconPlus className="w-4 h-4" /></button></div>
+                <div className="flex-1 overflow-y-auto px-2 py-2">{displayList.map((item: any) => (<div key={item.id} onClick={() => { setSelectedId(item.id); setIsSelectionMode(false); }} className={`mb-1 flex cursor-pointer items-center rounded-2xl border px-4 py-3 transition-all ${selectedId === item.id ? `${SOFT_ACTIVE_SURFACE}` : `border-transparent ${SOFT_HOVER_SURFACE}`}`}><div className={`w-10 h-10 ${mode === 'team' ? 'bg-purple-100 dark:bg-purple-900/30' : 'bg-zinc-200 dark:bg-zinc-700'} rounded-lg flex items-center justify-center text-lg mr-3`}>{item.avatar}</div><div className="flex-1 min-w-0"><h3 className="font-semibold text-zinc-800 dark:text-zinc-200 text-sm truncate">{item.name}</h3><p className="text-xs text-zinc-500 truncate">{mode === 'team' ? `${item.members.length} members` : item.status}</p></div></div>))}</div>
             </div>
             {activeEntity ? (
                 <div className="flex-1 flex flex-col bg-[#F4F4F5] dark:bg-zinc-900 relative">
                     <div className="h-16 border-b border-zinc-200 dark:border-zinc-800 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl flex items-center justify-between px-6 shadow-sm z-10 sticky top-0">
-                        <div className="flex items-center gap-3"><div className={`w-8 h-8 ${isGroup ? 'bg-purple-100 dark:bg-purple-900/30 rounded-lg' : 'bg-zinc-200 dark:bg-zinc-700 rounded-full'} flex items-center justify-center text-zinc-600 dark:text-zinc-300 font-bold text-xs`}>{activeEntity.avatar}</div><div><h3 className="font-bold text-zinc-800 dark:text-zinc-200 text-sm">{activeEntity.name}</h3>{isSelectionMode && <span className="text-xs text-blue-600 font-medium">Select messages to export</span>}</div></div>
+                        <div className="flex items-center gap-3"><div className={`w-8 h-8 ${isGroup ? 'bg-purple-100 dark:bg-purple-900/30 rounded-lg' : 'bg-zinc-200 dark:bg-zinc-700 rounded-full'} flex items-center justify-center text-zinc-600 dark:text-zinc-300 font-bold text-xs`}>{activeEntity.avatar}</div><div><h3 className="font-bold text-zinc-800 dark:text-zinc-200 text-sm">{activeEntity.name}</h3>{isSelectionMode && <span className="text-xs text-blue-600 font-medium">{copy.friendsView.selectMessages}</span>}</div></div>
                         <div className="flex gap-2">
-                            {isSelectionMode ? (<div className="flex items-center gap-2"><button onClick={() => { setIsSelectionMode(false); setSelectedMessageIds(new Set()); }} className="px-3 py-1.5 text-xs font-medium text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors">Cancel</button><div className="relative"><button onClick={() => setExportMenuOpen(!exportMenuOpen)} disabled={selectedMessageIds.size === 0} className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center gap-2 ${selectedMessageIds.size > 0 ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm' : 'bg-zinc-200 dark:bg-zinc-800 text-zinc-400 cursor-not-allowed'}`}>Export ({selectedMessageIds.size})</button>{exportMenuOpen && selectedMessageIds.size > 0 && (<><div className="fixed inset-0 z-20" onClick={() => setExportMenuOpen(false)}></div><div className="absolute right-0 top-8 bg-white dark:bg-zinc-800 rounded-lg shadow-xl border border-zinc-200 dark:border-zinc-700 w-40 z-30 py-1"><button onClick={handleExportProject} className="w-full text-left px-4 py-2 text-xs hover:bg-zinc-50 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200">Save to Project</button><button onClick={handleDownloadTxt} className="w-full text-left px-4 py-2 text-xs hover:bg-zinc-50 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200">Download .txt</button></div></>)}</div></div>) : (<button onClick={() => setIsSelectionMode(true)} className="px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700 rounded-lg shadow-sm transition-all flex items-center gap-2"><IconCheck className="w-3 h-3" /> Select</button>)}
+                            {isSelectionMode ? (<div className="flex items-center gap-2"><button onClick={() => { setIsSelectionMode(false); setSelectedMessageIds(new Set()); }} className="px-3 py-1.5 text-xs font-medium text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors">{copy.friendsView.cancel}</button><div className="relative"><button onClick={() => setExportMenuOpen(!exportMenuOpen)} disabled={selectedMessageIds.size === 0} className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center gap-2 ${selectedMessageIds.size > 0 ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm' : 'bg-zinc-200 dark:bg-zinc-800 text-zinc-400 cursor-not-allowed'}`}>{copy.friendsView.export} ({selectedMessageIds.size})</button>{exportMenuOpen && selectedMessageIds.size > 0 && (<><div className="fixed inset-0 z-20" onClick={() => setExportMenuOpen(false)}></div><div className="absolute right-0 top-8 bg-white dark:bg-zinc-800 rounded-lg shadow-xl border border-zinc-200 dark:border-zinc-700 w-40 z-30 py-1"><button onClick={handleExportProject} className="w-full text-left px-4 py-2 text-xs hover:bg-zinc-50 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200">{copy.friendsView.saveToProject}</button><button onClick={handleDownloadTxt} className="w-full text-left px-4 py-2 text-xs hover:bg-zinc-50 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200">{copy.friendsView.downloadTxt}</button></div></>)}</div></div>) : (<button onClick={() => setIsSelectionMode(true)} className="px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700 rounded-lg shadow-sm transition-all flex items-center gap-2"><IconCheck className="w-3 h-3" /> {copy.friendsView.select}</button>)}
                         </div>
                     </div>
                     <div className="flex-1 overflow-y-auto p-6 space-y-4">
-                        {conversation.length === 0 ? <div className="flex items-center justify-center h-full text-zinc-400 text-sm italic">No messages yet. Start the conversation!</div> : conversation.map(msg => { const isMe = msg.senderId === 'me'; const isSelected = selectedMessageIds.has(msg.id); const isAttachment = !!msg.attachment; return (<div key={msg.id} onClick={() => toggleSelection(msg.id)} className={`flex w-full ${isMe ? 'justify-end' : 'justify-start'} ${isSelectionMode ? 'cursor-pointer hover:opacity-80' : ''}`}><div className="flex items-center gap-3 max-w-[70%]">{isSelectionMode && (<div className={`w-5 h-5 rounded border flex items-center justify-center transition-all ${isSelected ? 'bg-blue-500 border-blue-500' : 'bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-600'}`}>{isSelected && <IconCheck className="w-3 h-3 text-white" />}</div>)}<div className={`p-3 rounded-2xl shadow-sm text-sm leading-relaxed ${isMe ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-900 dark:text-blue-100 rounded-tr-none' : 'bg-white dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 rounded-tl-none border border-zinc-100 dark:border-zinc-700'} ${isSelected ? 'ring-2 ring-blue-400 ring-offset-2 dark:ring-offset-zinc-900' : ''}`}>{!isMe && isGroup && <div className="text-[10px] font-bold text-zinc-400 mb-1">{msg.senderId}</div>}{isAttachment && msg.attachment && (<div onClick={(e) => { e.stopPropagation(); handleAttachmentClick(msg.attachment); }} className="mb-2 p-2 bg-white/50 dark:bg-zinc-950/30 rounded-lg border border-zinc-200/50 dark:border-zinc-700/50 flex items-center gap-3 min-w-[200px] cursor-pointer hover:bg-white dark:hover:bg-zinc-900 transition-colors group"><div className={`w-10 h-10 rounded flex items-center justify-center transition-colors ${msg.attachment.type === 'database' ? 'bg-blue-200 dark:bg-blue-800 text-blue-700 dark:text-blue-200 group-hover:bg-blue-300 dark:group-hover:bg-blue-700' : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 group-hover:bg-zinc-300 dark:group-hover:bg-zinc-600'}`}>{msg.attachment.type === 'database' ? <IconFolder className="w-5 h-5" /> : <IconFile className="w-5 h-5" />}</div><div className="flex-1 min-w-0"><div className="text-xs font-bold truncate flex items-center gap-1">{msg.attachment.title}<IconArrowRight className="w-3 h-3 opacity-50 group-hover:opacity-100" /></div><div className="text-[10px] opacity-70 truncate capitalize flex items-center gap-1">{msg.attachment.type === 'database' ? 'Shared Folder' : 'Shared Project'} • {msg.attachment.meta}</div></div></div>)}{msg.text}<div className={`text-[9px] mt-1 text-right ${isMe ? 'text-blue-700/60 dark:text-blue-300/50' : 'text-zinc-400'}`}>{new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div></div></div></div>); })}
+                        {conversation.length === 0 ? <div className="flex items-center justify-center h-full text-zinc-400 text-sm italic">{copy.friendsView.noMessages}</div> : conversation.map(msg => { const isMe = msg.senderId === 'me'; const isSelected = selectedMessageIds.has(msg.id); const isAttachment = !!msg.attachment; return (<div key={msg.id} onClick={() => toggleSelection(msg.id)} className={`flex w-full ${isMe ? 'justify-end' : 'justify-start'} ${isSelectionMode ? 'cursor-pointer hover:opacity-80' : ''}`}><div className="flex items-center gap-3 max-w-[70%]">{isSelectionMode && (<div className={`w-5 h-5 rounded border flex items-center justify-center transition-all ${isSelected ? 'bg-blue-500 border-blue-500' : 'bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-600'}`}>{isSelected && <IconCheck className="w-3 h-3 text-white" />}</div>)}<div className={`p-3 rounded-2xl shadow-sm text-sm leading-relaxed ${isMe ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-900 dark:text-blue-100 rounded-tr-none' : 'bg-white dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 rounded-tl-none border border-zinc-100 dark:border-zinc-700'} ${isSelected ? 'ring-2 ring-blue-400 ring-offset-2 dark:ring-offset-zinc-900' : ''}`}>{!isMe && isGroup && <div className="text-[10px] font-bold text-zinc-400 mb-1">{msg.senderId}</div>}{isAttachment && msg.attachment && (<div onClick={(e) => { e.stopPropagation(); handleAttachmentClick(msg.attachment); }} className="mb-2 p-2 bg-white/50 dark:bg-zinc-950/30 rounded-lg border border-zinc-200/50 dark:border-zinc-700/50 flex items-center gap-3 min-w-[200px] cursor-pointer hover:bg-white dark:hover:bg-zinc-900 transition-colors group"><div className={`w-10 h-10 rounded flex items-center justify-center transition-colors ${msg.attachment.type === 'database' ? 'bg-blue-200 dark:bg-blue-800 text-blue-700 dark:text-blue-200 group-hover:bg-blue-300 dark:group-hover:bg-blue-700' : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 group-hover:bg-zinc-300 dark:group-hover:bg-zinc-600'}`}>{msg.attachment.type === 'database' ? <IconFolder className="w-5 h-5" /> : <IconFile className="w-5 h-5" />}</div><div className="flex-1 min-w-0"><div className="text-xs font-bold truncate flex items-center gap-1">{msg.attachment.title}<IconArrowRight className="w-3 h-3 opacity-50 group-hover:opacity-100" /></div><div className="text-[10px] opacity-70 truncate capitalize flex items-center gap-1">{msg.attachment.type === 'database' ? 'Shared Folder' : 'Shared Project'} • {msg.attachment.meta}</div></div></div>)}{msg.text}<div className={`text-[9px] mt-1 text-right ${isMe ? 'text-blue-700/60 dark:text-blue-300/50' : 'text-zinc-400'}`}>{new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div></div></div></div>); })}
                         <div ref={messagesEndRef} />
                     </div>
-                    {!isSelectionMode && (<div className="p-4 bg-white dark:bg-zinc-900 border-t border-zinc-200 dark:border-zinc-800"><div className="flex gap-2 relative"><input className="flex-1 bg-zinc-100 dark:bg-zinc-800 border-none rounded-full px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all placeholder:text-zinc-400 dark:text-zinc-200" placeholder="Type a message..." value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSend()} /><button onClick={handleSend} className="p-3 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-full hover:bg-zinc-700 dark:hover:bg-zinc-300 transition-colors shadow-sm"><IconSend className="w-4 h-4" /></button></div></div>)}
+                    {!isSelectionMode && (<div className="p-4 bg-white dark:bg-zinc-900 border-t border-zinc-200 dark:border-zinc-800"><div className="flex gap-2 relative"><input className="flex-1 bg-zinc-100 dark:bg-zinc-800 border-none rounded-full px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all placeholder:text-zinc-400 dark:text-zinc-200" placeholder={copy.friendsView.typeMessage} value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSend()} /><button onClick={handleSend} className="p-3 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-full hover:bg-zinc-700 dark:hover:bg-zinc-300 transition-colors shadow-sm"><IconSend className="w-4 h-4" /></button></div></div>)}
                 </div>
-            ) : <div className="flex-1 flex items-center justify-center bg-zinc-50 dark:bg-zinc-900 text-zinc-400">Select a {mode === 'team' ? 'team' : 'friend'} to start chatting</div>}
+            ) : <div className="flex-1 flex items-center justify-center bg-zinc-50 dark:bg-zinc-900 text-zinc-400">{copy.friendsView.startChat.replace('{target}', mode === 'team' ? copy.friendsView.team : copy.friendsView.friend)}</div>}
         </div>
     );
 };
@@ -1479,19 +2121,35 @@ const SettingsView = ({
     onLogout,
     language,
     onLanguageChange,
+    theme,
+    onThemeChange,
 }: {
     currentUser: SessionUser,
     onUserChange: (user: SessionUser) => void,
     onLogout: () => void,
     language: AppLanguage,
     onLanguageChange: (language: AppLanguage) => void,
+    theme: Theme,
+    onThemeChange: (theme: Theme) => void,
 }) => {
     const copy = getUIText(language);
+    const avatarInputRef = useRef<HTMLInputElement | null>(null);
+    const [activeSection, setActiveSection] = useState<SettingsSectionId>('profile');
+    const [isSettingsSidebarCollapsed, setIsSettingsSidebarCollapsed] = useState(false);
     const [displayName, setDisplayName] = useState(currentUser.displayName);
+    const [email, setEmail] = useState(currentUser.email);
+    const [pendingEmail, setPendingEmail] = useState<string | null>(null);
+    const [currentPassword, setCurrentPassword] = useState('');
+    const [newPassword, setNewPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
     const [apiKey, setApiKey] = useState('');
     const [model, setModel] = useState(AI_CONFIG.defaultModel);
-    const [statusMessage, setStatusMessage] = useState<string | null>(null);
+    const [statusMessage, setStatusMessage] = useState<{
+        tone: 'success' | 'error' | 'info',
+        text: string,
+    } | null>(null);
     const [showKey, setShowKey] = useState(false);
+    const [busyAction, setBusyAction] = useState<string | null>(null);
     const [resolvedConfig, setResolvedConfig] = useState(getResolvedAIConfig());
 
     const refreshResolvedConfig = () => {
@@ -1504,35 +2162,153 @@ const SettingsView = ({
     useEffect(() => {
         refreshResolvedConfig();
         setDisplayName(currentUser.displayName);
+        setEmail(currentUser.email);
+        setPendingEmail((current) => (current && current === currentUser.email ? null : current));
     }, [currentUser]);
 
+    const publishStatus = (text: string, tone: 'success' | 'error' | 'info' = 'success') => {
+        setStatusMessage({ tone, text });
+    };
+
     const handleProfileSave = async () => {
+        setBusyAction('profile');
         const updatedUser = await updateCurrentUserProfile({ displayName });
         if (!updatedUser) {
-            setStatusMessage(copy.settings.profileUpdateFailed);
+            publishStatus(copy.settings.profileUpdateFailed, 'error');
+            setBusyAction(null);
             return;
         }
 
         onUserChange(updatedUser);
-        setStatusMessage(copy.settings.profileUpdated);
+        publishStatus(copy.settings.profileUpdated);
+        setBusyAction(null);
+    };
+
+    const handleEmailSave = async () => {
+        if (!email.trim()) {
+            publishStatus(copy.settings.emailRequired, 'error');
+            return;
+        }
+
+        setBusyAction('email');
+        const result = await updateCurrentUserEmail(email);
+
+        if (result.error) {
+            publishStatus(localizeAuthMessage(result.error, language), 'error');
+            setBusyAction(null);
+            return;
+        }
+
+        if (result.pendingEmail) {
+            setPendingEmail(result.pendingEmail);
+            publishStatus(`${copy.settings.emailChangePendingPrefix} ${result.pendingEmail}.`, 'info');
+            setBusyAction(null);
+            return;
+        }
+
+        if (!result.user) {
+            publishStatus(copy.settings.emailUpdateFailed, 'error');
+            setBusyAction(null);
+            return;
+        }
+
+        setPendingEmail(null);
+        onUserChange(result.user);
+        publishStatus(copy.settings.emailUpdated);
+        setBusyAction(null);
+    };
+
+    const handlePasswordSave = async () => {
+        if (!newPassword.trim()) {
+            publishStatus(copy.settings.newPasswordRequired, 'error');
+            return;
+        }
+
+        if (newPassword !== confirmPassword) {
+            publishStatus(copy.settings.passwordMismatch, 'error');
+            return;
+        }
+
+        setBusyAction('password');
+        const result = await updateCurrentUserPassword({
+            currentPassword,
+            password: newPassword,
+        });
+
+        if (result.error) {
+            publishStatus(localizeAuthMessage(result.error, language), 'error');
+            setBusyAction(null);
+            return;
+        }
+
+        setCurrentPassword('');
+        setNewPassword('');
+        setConfirmPassword('');
+        publishStatus(copy.settings.passwordUpdated);
+        setBusyAction(null);
+    };
+
+    const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        event.target.value = '';
+
+        if (!file) {
+            return;
+        }
+
+        setBusyAction('avatar');
+
+        try {
+            const avatarUrl = await prepareAvatarDataUrl(file);
+            const updatedUser = updateCurrentUserAvatar(avatarUrl);
+
+            if (!updatedUser) {
+                publishStatus(copy.settings.avatarUploadFailed, 'error');
+                setBusyAction(null);
+                return;
+            }
+
+            onUserChange(updatedUser);
+            publishStatus(copy.settings.avatarUpdated);
+        } catch (error) {
+            console.warn('Could not update avatar.', error);
+            publishStatus(copy.settings.avatarUploadFailed, 'error');
+        } finally {
+            setBusyAction(null);
+        }
+    };
+
+    const handleAvatarRemove = () => {
+        const updatedUser = updateCurrentUserAvatar('');
+        if (!updatedUser) {
+            publishStatus(copy.settings.avatarUploadFailed, 'error');
+            return;
+        }
+
+        onUserChange(updatedUser);
+        publishStatus(copy.settings.avatarRemoved);
     };
 
     const handleSave = async () => {
+        setBusyAction('ai-save');
         const updatedUser = await saveStoredAISettings({ apiKey, model });
         if (updatedUser) {
             onUserChange(updatedUser);
         }
         refreshResolvedConfig();
-        setStatusMessage(copy.settings.aiSettingsSaved);
+        publishStatus(copy.settings.aiSettingsSaved);
+        setBusyAction(null);
     };
 
     const handleClear = async () => {
+        setBusyAction('ai-clear');
         const updatedUser = await clearStoredAISettings();
         if (updatedUser) {
             onUserChange(updatedUser);
         }
         refreshResolvedConfig();
-        setStatusMessage(copy.settings.aiOverrideCleared);
+        publishStatus(copy.settings.aiOverrideCleared);
+        setBusyAction(null);
     };
 
     useEffect(() => {
@@ -1548,48 +2324,281 @@ const SettingsView = ({
                 ? copy.settings.usingEnvironment
                 : copy.settings.notConfigured;
 
-    return (
-        <div className="max-w-5xl mx-auto p-8 h-full overflow-y-auto bg-white dark:bg-zinc-950">
-            <h2 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100 mb-2">{copy.settings.title}</h2>
-            <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-8">
-                {copy.settings.subtitle}
-            </p>
+    const sectionButtons: Array<{
+        id: SettingsSectionId,
+        title: string,
+        icon: React.ReactNode,
+    }> = [
+        {
+            id: 'profile',
+            title: copy.settings.profile,
+            icon: <IconUser className="w-4 h-4" />,
+        },
+        {
+            id: 'account',
+            title: copy.settings.accountSecurity,
+            icon: <IconLock className="w-4 h-4" />,
+        },
+        {
+            id: 'appearance',
+            title: copy.settings.appearance,
+            icon: <IconPalette className="w-4 h-4" />,
+        },
+        {
+            id: 'language',
+            title: copy.settings.language,
+            icon: <IconSettings className="w-4 h-4" />,
+        },
+        {
+            id: 'ai',
+            title: copy.settings.aiAccess,
+            icon: <IconMagic className="w-4 h-4" />,
+        },
+    ];
 
-            <div className="mb-6 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-950/40 p-5">
-                <LanguageToggle
-                    language={language}
-                    onChange={onLanguageChange}
-                    label={copy.language.label}
-                    hint={copy.language.hint}
-                />
-            </div>
+    const statusStyles =
+        statusMessage?.tone === 'error'
+            ? 'border-red-200 bg-red-50 text-red-700 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-300'
+            : statusMessage?.tone === 'info'
+                ? 'border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900/40 dark:bg-blue-900/20 dark:text-blue-300'
+                : 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-900/20 dark:text-emerald-300';
 
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-                <div className="space-y-1">
-                    <button className="w-full text-left px-3 py-2 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 font-medium rounded-lg text-sm">
-                        {copy.settings.aiAccess}
-                    </button>
-                    <button className="w-full text-left px-3 py-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium rounded-lg text-sm">
-                        {copy.settings.profile}
-                    </button>
-                    <button className="w-full text-left px-3 py-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium rounded-lg text-sm">
-                        {copy.settings.appearance}
-                    </button>
-                    <button className="w-full text-left px-3 py-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium rounded-lg text-sm">
-                        {copy.settings.language}
-                    </button>
-                </div>
-
-                <div className="lg:col-span-3 space-y-6">
-                    <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-8">
-                        <div className="flex items-start justify-between gap-6 mb-8">
-                            <div>
-                                <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">{copy.settings.aiAccessSetup}</h3>
-                                <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">
-                                    {copy.settings.aiAccessHint}
-                                </p>
+    const renderSectionContent = () => {
+        switch (activeSection) {
+            case 'language':
+                return (
+                    <SettingsCard
+                        title={copy.settings.language}
+                        description={copy.settings.languageDescription}
+                    >
+                        <div className="max-w-md">
+                            <LanguageToggle
+                                language={language}
+                                onChange={onLanguageChange}
+                                label={copy.language.label}
+                                hint={copy.language.hint}
+                            />
+                        </div>
+                    </SettingsCard>
+                );
+            case 'account':
+                return (
+                    <SettingsCard
+                        title={copy.settings.accountSecurity}
+                        description={copy.settings.accountDescription}
+                    >
+                        <div>
+                            <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-zinc-400">
+                                <IconMail className="w-3.5 h-3.5" />
+                                {copy.settings.newEmail}
                             </div>
-                            <div className={`px-3 py-1 rounded-full text-xs font-medium ${
+                            <div className="grid gap-4 sm:grid-cols-2">
+                                <div>
+                                    <div className="mb-1 text-xs text-zinc-400">{copy.settings.email}</div>
+                                    <div className="text-sm text-zinc-700 dark:text-zinc-200">{currentUser.email}</div>
+                                </div>
+                                {pendingEmail && (
+                                    <div>
+                                        <div className="mb-1 text-xs text-zinc-400">{copy.settings.pendingEmail}</div>
+                                        <div className="text-sm text-zinc-700 dark:text-zinc-200">{pendingEmail}</div>
+                                    </div>
+                                )}
+                            </div>
+                            <div className="mt-4 max-w-xl">
+                                <label className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                                    {copy.settings.newEmail}
+                                </label>
+                                <input
+                                    type="email"
+                                    className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 outline-none transition-colors focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-950/70 dark:text-zinc-100 dark:focus:border-zinc-500"
+                                    value={email}
+                                    onChange={(event) => setEmail(event.target.value)}
+                                    placeholder={currentUser.email}
+                                    autoComplete="email"
+                                />
+                                <p className="mt-2 text-xs leading-5 text-zinc-400">{copy.settings.emailHint}</p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={handleEmailSave}
+                                disabled={busyAction === 'email'}
+                                className="mt-4 rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                            >
+                                {copy.settings.saveEmail}
+                            </button>
+                        </div>
+
+                        <SettingsDivider />
+
+                        <div>
+                            <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-zinc-400">
+                                <IconLock className="w-3.5 h-3.5" />
+                                {copy.settings.savePassword}
+                            </div>
+                            <div className="grid max-w-2xl gap-4 sm:grid-cols-2">
+                                <div className="sm:col-span-2">
+                                    <label className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                                        {copy.settings.currentPassword}
+                                    </label>
+                                    <input
+                                        type="password"
+                                        className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 outline-none transition-colors focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-950/70 dark:text-zinc-100 dark:focus:border-zinc-500"
+                                        value={currentPassword}
+                                        onChange={(event) => setCurrentPassword(event.target.value)}
+                                        autoComplete="current-password"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                                        {copy.settings.newPassword}
+                                    </label>
+                                    <input
+                                        type="password"
+                                        className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 outline-none transition-colors focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-950/70 dark:text-zinc-100 dark:focus:border-zinc-500"
+                                        value={newPassword}
+                                        onChange={(event) => setNewPassword(event.target.value)}
+                                        autoComplete="new-password"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                                        {copy.settings.confirmPassword}
+                                    </label>
+                                    <input
+                                        type="password"
+                                        className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 outline-none transition-colors focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-950/70 dark:text-zinc-100 dark:focus:border-zinc-500"
+                                        value={confirmPassword}
+                                        onChange={(event) => setConfirmPassword(event.target.value)}
+                                        autoComplete="new-password"
+                                    />
+                                </div>
+                            </div>
+                            <p className="mt-2 text-xs leading-5 text-zinc-400">{copy.settings.passwordHint}</p>
+                            <button
+                                type="button"
+                                onClick={handlePasswordSave}
+                                disabled={busyAction === 'password'}
+                                className="mt-4 rounded-md border border-zinc-200 px-4 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                            >
+                                {copy.settings.savePassword}
+                            </button>
+                        </div>
+
+                        <SettingsDivider />
+
+                        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                                <div className="text-sm font-semibold text-red-600 dark:text-red-300">{copy.settings.signOut}</div>
+                                <p className="mt-1 text-xs leading-5 text-zinc-500 dark:text-zinc-400">{copy.shell.signOutConfirm}</p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={onLogout}
+                                className="inline-flex items-center gap-2 rounded-md border border-red-200 px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 dark:border-red-900/40 dark:text-red-300 dark:hover:bg-red-900/20"
+                            >
+                                <IconLogOut className="w-4 h-4" />
+                                {copy.settings.signOut}
+                            </button>
+                        </div>
+                    </SettingsCard>
+                );
+            case 'appearance':
+                return (
+                    <SettingsCard
+                        title={copy.settings.appearance}
+                        description={copy.settings.appearanceDescription}
+                    >
+                        <input
+                            ref={avatarInputRef}
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={handleAvatarUpload}
+                        />
+
+                        <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="flex items-center gap-4">
+                                <AvatarBadge
+                                    avatarUrl={currentUser.avatarUrl}
+                                    initials={currentUser.initials}
+                                    name={currentUser.displayName}
+                                    className="h-20 w-20 rounded-[22px] border border-zinc-200 dark:border-zinc-800"
+                                    textClassName="text-xl font-semibold"
+                                />
+                                <div>
+                                    <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{currentUser.displayName}</div>
+                                    <div className="text-sm text-zinc-500 dark:text-zinc-400">{currentUser.email}</div>
+                                    <p className="mt-2 text-xs leading-5 text-zinc-400">{copy.settings.avatarHint}</p>
+                                </div>
+                            </div>
+                            <div className="flex flex-wrap gap-3">
+                                <button
+                                    type="button"
+                                    onClick={() => avatarInputRef.current?.click()}
+                                    disabled={busyAction === 'avatar'}
+                                    className="inline-flex items-center gap-2 rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                                >
+                                    <IconUpload className="w-4 h-4" />
+                                    {copy.settings.uploadAvatar}
+                                </button>
+                                {currentUser.avatarUrl && (
+                                    <button
+                                        type="button"
+                                        onClick={handleAvatarRemove}
+                                        className="rounded-md border border-zinc-200 px-4 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                                    >
+                                        {copy.settings.removeAvatar}
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+
+                        <SettingsDivider />
+
+                        <div>
+                            <div className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-zinc-400">{copy.settings.themeMode}</div>
+                            <div className="inline-flex rounded-xl bg-zinc-100 p-1 dark:bg-white/[0.06]">
+                                <button
+                                    type="button"
+                                    onClick={() => onThemeChange('light')}
+                                    className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+                                        theme === 'light'
+                                            ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-900 dark:text-zinc-100'
+                                            : 'text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100'
+                                    }`}
+                                >
+                                    <IconSun className="w-4 h-4" />
+                                    {copy.settings.lightMode}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => onThemeChange('dark')}
+                                    className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+                                        theme === 'dark'
+                                            ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-900 dark:text-zinc-100'
+                                            : 'text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100'
+                                    }`}
+                                >
+                                    <IconMoon className="w-4 h-4" />
+                                    {copy.settings.darkMode}
+                                </button>
+                            </div>
+                            <p className="mt-3 text-xs leading-5 text-zinc-400">{copy.settings.themeHint}</p>
+                        </div>
+                    </SettingsCard>
+                );
+            case 'ai':
+                return (
+                    <SettingsCard
+                        title={copy.settings.aiAccessSetup}
+                        description={copy.settings.aiAccessHint}
+                    >
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                                <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{copy.settings.aiAccess}</div>
+                                <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{copy.settings.aiAccessDescription}</p>
+                            </div>
+                            <div className={`rounded-full px-3 py-1 text-xs font-medium ${
                                 resolvedConfig.source === 'browser'
                                     ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
                                     : resolvedConfig.source === 'environment'
@@ -1600,157 +2609,253 @@ const SettingsView = ({
                             </div>
                         </div>
 
-                        <div className="space-y-6">
-                            <div className="grid md:grid-cols-[1.2fr_0.8fr] gap-6">
-                                <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 p-5 bg-zinc-50/70 dark:bg-zinc-950/40">
-                                    <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 mb-4">{copy.settings.account}</div>
-                                    <div className="space-y-4">
-                                        <div>
-                                            <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-                                                {copy.settings.displayName}
-                                            </label>
-                                            <input
-                                                className="w-full px-3 py-2 border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 rounded-lg text-sm"
-                                                value={displayName}
-                                                onChange={(e) => setDisplayName(e.target.value)}
-                                            />
-                                        </div>
-                                        <div>
-                                            <div className="text-xs text-zinc-400 mb-1">{copy.settings.email}</div>
-                                            <div className="text-sm text-zinc-700 dark:text-zinc-200">{currentUser.email}</div>
-                                        </div>
-                                        <div className="flex flex-wrap gap-2">
-                                            <span className="px-2.5 py-1 rounded-full bg-zinc-100 dark:bg-zinc-800 text-xs text-zinc-600 dark:text-zinc-300">{currentUser.role}</span>
-                                            <span className="px-2.5 py-1 rounded-full bg-zinc-100 dark:bg-zinc-800 text-xs text-zinc-600 dark:text-zinc-300">{currentUser.plan}</span>
-                                        </div>
-                                        <div className="flex flex-wrap gap-3">
-                                            <button
-                                                onClick={handleProfileSave}
-                                                className="px-4 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm font-medium text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-800"
-                                            >
-                                                {copy.settings.saveProfile}
-                                            </button>
-                                            <button
-                                                onClick={onLogout}
-                                                className="px-4 py-2 border border-red-200 dark:border-red-900/40 rounded-lg text-sm font-medium text-red-600 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2"
-                                            >
-                                                <IconLogOut className="w-4 h-4" /> {copy.settings.signOut}
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 p-5 bg-zinc-50/70 dark:bg-zinc-950/40">
-                                    <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 mb-4">{copy.settings.currentUser}</div>
-                                    <div className="flex items-center gap-4">
-                                        <div className="w-14 h-14 rounded-2xl bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 flex items-center justify-center font-semibold">
-                                            {currentUser.initials}
-                                        </div>
-                                        <div>
-                                            <div className="font-medium text-zinc-900 dark:text-zinc-100">{currentUser.displayName}</div>
-                                            <div className="text-sm text-zinc-500 dark:text-zinc-400">{currentUser.email}</div>
-                                        </div>
-                                    </div>
-                                    <p className="text-xs text-zinc-400 mt-4 leading-5">
-                                        {copy.settings.localAccountHint}
-                                    </p>
-                                </div>
-                            </div>
-
+                        <div className="max-w-2xl space-y-5">
                             <div>
-                                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                                <label className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
                                     {copy.settings.apiKey}
                                 </label>
                                 <div className="flex gap-2">
                                     <input
                                         type={showKey ? 'text' : 'password'}
-                                        className="w-full px-3 py-2 border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 rounded-lg text-sm"
+                                        className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 outline-none transition-colors focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-950/70 dark:text-zinc-100 dark:focus:border-zinc-500"
                                         placeholder={copy.settings.apiKeyPlaceholder}
                                         value={apiKey}
                                         onChange={(e) => setApiKey(e.target.value)}
                                         spellCheck={false}
                                     />
                                     <button
+                                        type="button"
                                         onClick={() => setShowKey((value) => !value)}
-                                        className="px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 text-sm text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800"
+                                        className="rounded-lg border border-zinc-200 px-3 py-2.5 text-sm text-zinc-600 transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
                                     >
                                         {showKey ? copy.settings.hide : copy.settings.show}
                                     </button>
                                 </div>
-                                <p className="text-xs text-zinc-400 mt-2">
-                                    {copy.settings.apiKeyHint}
-                                </p>
+                                <p className="mt-2 text-xs leading-5 text-zinc-400">{copy.settings.apiKeyHint}</p>
                             </div>
 
                             <div>
-                                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                                <label className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
                                     {copy.settings.model}
                                 </label>
                                 <input
-                                    className="w-full max-w-md px-3 py-2 border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 rounded-lg text-sm"
+                                    className="w-full max-w-md rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 outline-none transition-colors focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-950/70 dark:text-zinc-100 dark:focus:border-zinc-500"
                                     value={model}
                                     onChange={(e) => setModel(e.target.value)}
                                     placeholder={AI_CONFIG.defaultModel}
                                     spellCheck={false}
                                 />
-                                <p className="text-xs text-zinc-400 mt-2">
+                                <p className="mt-2 text-xs leading-5 text-zinc-400">
                                     {copy.settings.modelHintPrefix} `{AI_CONFIG.defaultModel}`.
                                 </p>
                             </div>
 
                             <div className="flex flex-wrap items-center gap-3">
                                 <button
+                                    type="button"
                                     onClick={handleSave}
-                                    className="px-4 py-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-lg text-sm font-medium hover:bg-zinc-800 dark:hover:bg-zinc-200"
+                                    disabled={busyAction === 'ai-save'}
+                                    className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
                                 >
                                     {copy.settings.saveAISettings}
                                 </button>
                                 <button
+                                    type="button"
                                     onClick={handleClear}
-                                    className="px-4 py-2 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800"
+                                    disabled={busyAction === 'ai-clear'}
+                                    className="rounded-md border border-zinc-200 px-4 py-2 text-sm text-zinc-600 transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
                                 >
                                     {copy.settings.clearBrowserOverride}
                                 </button>
-                                {statusMessage && (
-                                    <span className="text-sm text-emerald-600 dark:text-emerald-400">{statusMessage}</span>
-                                )}
                             </div>
                         </div>
-                    </div>
 
-                    <div className="bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 rounded-xl p-6">
-                        <h4 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 mb-3">{copy.settings.currentRuntime}</h4>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                            <div>
-                                <div className="text-zinc-400 mb-1">{copy.settings.engine}</div>
-                                <div className="text-zinc-700 dark:text-zinc-200">{resolvedConfig.providerLabel}</div>
-                            </div>
-                            <div>
-                                <div className="text-zinc-400 mb-1">{copy.settings.model}</div>
-                                <div className="text-zinc-700 dark:text-zinc-200">{resolvedConfig.model}</div>
-                            </div>
-                            <div>
-                                <div className="text-zinc-400 mb-1">{copy.settings.keySource}</div>
-                                <div className="text-zinc-700 dark:text-zinc-200">{sourceLabel}</div>
-                            </div>
-                            <div>
-                                <div className="text-zinc-400 mb-1">{copy.settings.status}</div>
-                                <div className="text-zinc-700 dark:text-zinc-200">
-                                    {resolvedConfig.source === 'placeholder' ? copy.settings.missingApiKey : copy.settings.ready}
+                        <SettingsDivider />
+
+                        <div>
+                            <div className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-zinc-400">{copy.settings.currentRuntime}</div>
+                            <div className="grid gap-4 sm:grid-cols-2">
+                                <div>
+                                    <div className="mb-1 text-xs text-zinc-400">{copy.settings.engine}</div>
+                                    <div className="text-sm text-zinc-700 dark:text-zinc-200">{resolvedConfig.providerLabel}</div>
+                                </div>
+                                <div>
+                                    <div className="mb-1 text-xs text-zinc-400">{copy.settings.model}</div>
+                                    <div className="text-sm text-zinc-700 dark:text-zinc-200">{resolvedConfig.model}</div>
+                                </div>
+                                <div>
+                                    <div className="mb-1 text-xs text-zinc-400">{copy.settings.keySource}</div>
+                                    <div className="text-sm text-zinc-700 dark:text-zinc-200">{sourceLabel}</div>
+                                </div>
+                                <div>
+                                    <div className="mb-1 text-xs text-zinc-400">{copy.settings.status}</div>
+                                    <div className="text-sm text-zinc-700 dark:text-zinc-200">
+                                        {resolvedConfig.source === 'placeholder' ? copy.settings.missingApiKey : copy.settings.ready}
+                                    </div>
                                 </div>
                             </div>
                         </div>
+                    </SettingsCard>
+                );
+            case 'profile':
+            default:
+                return (
+                    <SettingsCard
+                        title={copy.settings.profile}
+                        description={copy.settings.profileDescription}
+                    >
+                        <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="flex items-center gap-4">
+                                <AvatarBadge
+                                    avatarUrl={currentUser.avatarUrl}
+                                    initials={currentUser.initials}
+                                    name={currentUser.displayName}
+                                    className="h-16 w-16 rounded-[20px] border border-zinc-200 dark:border-zinc-800"
+                                    textClassName="text-base font-semibold"
+                                />
+                                <div>
+                                    <div className="font-semibold text-zinc-900 dark:text-zinc-100">{currentUser.displayName}</div>
+                                    <div className="text-sm text-zinc-500 dark:text-zinc-400">{currentUser.email}</div>
+                                    <div className="mt-2 flex flex-wrap gap-2">
+                                        <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">{currentUser.role}</span>
+                                        <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">{currentUser.plan}</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <p className="max-w-sm text-xs leading-5 text-zinc-400">{copy.settings.localAccountHint}</p>
+                        </div>
+
+                        <SettingsDivider />
+
+                        <div className="max-w-xl">
+                            <label className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                                {copy.settings.displayName}
+                            </label>
+                            <input
+                                className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 outline-none transition-colors focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-950/70 dark:text-zinc-100 dark:focus:border-zinc-500"
+                                value={displayName}
+                                onChange={(event) => setDisplayName(event.target.value)}
+                            />
+                        </div>
+                        <button
+                            type="button"
+                            onClick={handleProfileSave}
+                            disabled={busyAction === 'profile'}
+                            className="w-fit rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                        >
+                            {copy.settings.saveProfile}
+                        </button>
+                    </SettingsCard>
+                );
+        }
+    };
+
+    return (
+        <div className="h-full overflow-y-auto bg-zinc-100 dark:bg-[#313338]">
+            <div className="mx-auto flex min-h-full max-w-6xl flex-col lg:flex-row">
+                <aside className={`w-full shrink-0 border-b border-zinc-200 bg-zinc-50 dark:border-white/[0.08] dark:bg-[#2b2d31] lg:border-b-0 lg:border-r ${isSettingsSidebarCollapsed ? 'lg:w-[96px]' : 'lg:w-[280px]'}`}>
+                    <div className={`py-6 lg:sticky lg:top-0 lg:h-screen lg:overflow-y-auto ${isSettingsSidebarCollapsed ? 'px-3' : 'px-4 sm:px-5'}`}>
+                        <div className={`${isSettingsSidebarCollapsed ? 'flex flex-col items-center gap-4' : 'pb-5'}`}>
+                            <div className={`flex ${isSettingsSidebarCollapsed ? 'flex-col items-center gap-3' : 'items-center gap-3 rounded-[28px] border border-zinc-200/80 bg-white/[0.74] px-3.5 py-3 shadow-[0_18px_38px_rgba(15,23,42,0.06)] backdrop-blur-xl dark:border-white/[0.08] dark:bg-white/[0.06] dark:shadow-[0_12px_28px_rgba(0,0,0,0.18)]'}`}>
+                                <AvatarBadge
+                                    avatarUrl={currentUser.avatarUrl}
+                                    initials={currentUser.initials}
+                                    name={currentUser.displayName}
+                                    className={`${isSettingsSidebarCollapsed ? 'h-14 w-14 rounded-[24px]' : 'h-12 w-12 rounded-[20px]'} border border-zinc-200/80 bg-white shadow-sm dark:border-white/[0.08] dark:bg-zinc-900`}
+                                    textClassName={`${isSettingsSidebarCollapsed ? 'text-base' : 'text-sm'} font-semibold`}
+                                />
+                                {!isSettingsSidebarCollapsed && (
+                                    <div className="min-w-0 flex-1">
+                                        <div className="truncate text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-400">
+                                            {copy.settings.title}
+                                        </div>
+                                        <div className="mt-1 truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">{currentUser.displayName}</div>
+                                        <div className="truncate text-xs text-zinc-500 dark:text-zinc-400">{currentUser.email}</div>
+                                    </div>
+                                )}
+                                {!isSettingsSidebarCollapsed && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsSettingsSidebarCollapsed((value) => !value)}
+                                        className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-transparent text-zinc-400 transition-all ${SOFT_HOVER_SURFACE} hover:text-zinc-900 dark:hover:text-zinc-100`}
+                                        title="Collapse sidebar"
+                                        aria-label="Collapse sidebar"
+                                    >
+                                        <IconSidebar className="w-4 h-4" />
+                                    </button>
+                                )}
+                            </div>
+
+                            {isSettingsSidebarCollapsed && (
+                                <button
+                                    type="button"
+                                    onClick={() => setIsSettingsSidebarCollapsed((value) => !value)}
+                                    className={`flex h-10 w-10 items-center justify-center rounded-2xl border border-transparent text-zinc-400 transition-all ${SOFT_HOVER_SURFACE} hover:text-zinc-900 dark:hover:text-zinc-100`}
+                                    title="Expand sidebar"
+                                    aria-label="Expand sidebar"
+                                >
+                                    <IconArrowRight className="w-4 h-4" />
+                                </button>
+                            )}
+                        </div>
+
+                        <div className={`mx-auto h-px bg-zinc-200/80 dark:bg-white/[0.08] ${isSettingsSidebarCollapsed ? 'mt-4 w-10' : 'mt-5 w-full'}`}></div>
+
+                        {!isSettingsSidebarCollapsed && (
+                            <div className="mt-5 px-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-400">
+                                Sections
+                            </div>
+                        )}
+
+                        <div className={`${isSettingsSidebarCollapsed ? 'mt-6 flex flex-col items-center gap-3' : 'mt-3 space-y-1.5'}`}>
+                            {sectionButtons.map((section) => (
+                                <SettingsSectionButton
+                                    key={section.id}
+                                    active={activeSection === section.id}
+                                    icon={section.icon}
+                                    title={section.title}
+                                    collapsed={isSettingsSidebarCollapsed}
+                                    onClick={() => setActiveSection(section.id)}
+                                />
+                            ))}
+                        </div>
+
+                        {!isSettingsSidebarCollapsed && (
+                            <p className="mt-5 px-2 text-xs leading-5 text-zinc-400">
+                                {copy.settings.sectionHint}
+                            </p>
+                        )}
                     </div>
-                </div>
+                </aside>
+
+                <section className="min-w-0 flex-1 bg-white dark:bg-[#313338]">
+                    <div className="mx-auto max-w-3xl px-6 py-8 sm:px-10">
+                        <div className="mb-8">
+                            <h2 className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">{copy.settings.title}</h2>
+                            <p className="mt-2 text-sm leading-6 text-zinc-500 dark:text-zinc-400">
+                                {copy.settings.subtitle}
+                            </p>
+                        </div>
+
+                        {statusMessage && (
+                            <div className={`mb-6 rounded-lg border px-4 py-3 text-sm ${statusStyles}`}>
+                                {statusMessage.text}
+                            </div>
+                        )}
+
+                        {renderSectionContent()}
+                    </div>
+                </section>
             </div>
         </div>
     );
 };
 
 // ... (Existing DatabaseSelector, ResourceViewer, AgentPanel)
-const DatabaseSelector = ({ projectId, isOpen, onToggle }: { projectId: string, isOpen: boolean, onToggle: () => void }) => {
+const DatabaseSelector = ({ projectId, isOpen, onToggle, language }: { projectId: string, isOpen: boolean, onToggle: () => void, language: AppLanguage }) => {
+    const copy = getUIText(language);
     const project = useStore(s => s.projects.find(p => p.id === projectId));
-    const availableTags = useStore(s => s.availableTags);
+    const databases = useStore(s => s.databases);
     const addTag = useStore(s => s.addProjectToDatabase);
     const removeTag = useStore(s => s.removeProjectFromDatabase);
 
@@ -1758,15 +2863,48 @@ const DatabaseSelector = ({ projectId, isOpen, onToggle }: { projectId: string, 
 
     return (
         <div className="relative">
-            <button onClick={onToggle} className="flex items-center gap-1 text-xs text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200 px-2 py-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"><IconDatabase className="w-3.5 h-3.5" /><span>Saved in...</span></button>
+            <button onClick={onToggle} className="flex items-center gap-1 text-xs text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200 px-2 py-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"><IconDatabase className="w-3.5 h-3.5" /><span>{copy.databaseSelector.savedIn}</span></button>
             {isOpen && (
                 <>
                 <div className="fixed inset-0 z-40" onClick={onToggle} />
-                <div className="absolute top-8 right-0 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 shadow-xl rounded-lg p-3 w-48 z-50">
-                    <h4 className="text-xs font-bold text-zinc-400 uppercase mb-2">Storage Location</h4>
-                    <div className="flex flex-wrap gap-1 mb-3">{project.databaseTags.map(tag => (<span key={tag} className="flex items-center gap-1 px-1.5 py-0.5 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-300 rounded text-[10px] border border-blue-100 dark:border-blue-900/30">{tag}<button onClick={() => removeTag(projectId, tag)} className="hover:text-blue-800"><IconX className="w-2.5 h-2.5" /></button></span>))}{project.databaseTags.length === 0 && <span className="text-[10px] text-zinc-400 italic">No tags</span>}</div>
-                    <h4 className="text-xs font-bold text-zinc-400 uppercase mb-2">Add to Database</h4>
-                    <div className="space-y-1 max-h-32 overflow-y-auto">{availableTags.filter(t => !project.databaseTags.includes(t)).map(tag => (<button key={tag} onClick={() => addTag(projectId, tag)} className="w-full text-left px-2 py-1 hover:bg-zinc-50 dark:hover:bg-zinc-800 rounded text-xs text-zinc-600 dark:text-zinc-300 flex items-center justify-between group">{tag}<IconPlus className="w-3 h-3 opacity-0 group-hover:opacity-100" /></button>))}{availableTags.filter(t => !project.databaseTags.includes(t)).length === 0 && (<div className="text-[10px] text-zinc-400 italic px-2">All tags added</div>)}</div>
+                <div className="absolute top-8 right-0 z-50 w-56 rounded-[24px] border border-zinc-200/80 bg-white/96 p-3 shadow-[0_20px_48px_rgba(15,23,42,0.14)] backdrop-blur-xl dark:border-white/[0.08] dark:bg-zinc-900/96">
+                    <h4 className="text-xs font-bold text-zinc-400 uppercase mb-2">{copy.databaseSelector.storageLocation}</h4>
+                    <div className="flex flex-wrap gap-1 mb-3">
+                        {project.databaseTags.map(tag => {
+                            return (
+                                <span
+                                    key={tag}
+                                    className="flex items-center gap-1 rounded-full border border-zinc-200/80 bg-zinc-50 px-2 py-1 text-[10px] font-medium text-zinc-500 dark:border-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-300"
+                                >
+                                    {tag}
+                                    <button onClick={() => removeTag(projectId, tag)} className="hover:opacity-80"><IconX className="w-2.5 h-2.5" /></button>
+                                </span>
+                            );
+                        })}
+                        {project.databaseTags.length === 0 && <span className="text-[10px] text-zinc-400 italic">{copy.databaseSelector.noTags}</span>}
+                    </div>
+                    <h4 className="text-xs font-bold text-zinc-400 uppercase mb-2">{copy.databaseSelector.addToDatabase}</h4>
+                    <div className="space-y-1 max-h-32 overflow-y-auto">
+                        {databases.filter(database => !project.databaseTags.includes(database.name)).map(database => (
+                            <button key={database.name} onClick={() => addTag(projectId, database.name)} className="group flex w-full items-center justify-between rounded-2xl border border-transparent px-2 py-2 text-left text-xs text-zinc-600 transition-all hover:border-zinc-200/80 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:border-zinc-800 dark:hover:bg-zinc-800/70">
+                                <span className="flex min-w-0 items-center gap-2">
+                                    <span
+                                        className="flex h-7 w-7 items-center justify-center rounded-[14px] border shadow-sm"
+                                        style={getDatabaseBadgeStyle(database.color)}
+                                    >
+                                        <DatabaseGlyph
+                                            database={database}
+                                            className="h-3 w-3"
+                                            textClassName="text-xs"
+                                        />
+                                    </span>
+                                    <span className="truncate">{database.name}</span>
+                                </span>
+                                <IconPlus className="w-3 h-3 opacity-0 group-hover:opacity-100" />
+                            </button>
+                        ))}
+                        {databases.filter(database => !project.databaseTags.includes(database.name)).length === 0 && (<div className="text-[10px] text-zinc-400 italic px-2">{copy.databaseSelector.allTagsAdded}</div>)}
+                    </div>
                 </div>
                 </>
             )}
@@ -1774,9 +2912,11 @@ const DatabaseSelector = ({ projectId, isOpen, onToggle }: { projectId: string, 
     );
 };
 
-const ResourceViewer = ({ project }: { project: any }) => {
+const ResourceViewer = ({ project, language }: { project: any, language: AppLanguage }) => {
+    const copy = getUIText(language);
     const [loadError, setLoadError] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
+    const [isCopilotContextCollapsed, setIsCopilotContextCollapsed] = useState(false);
     const capturedText = useStore(s => s.activeProjectContent);
     const updateCapturedText = useStore(s => s.updateNoteContent);
     const handleIframeLoad = () => { setIsLoading(false); };
@@ -1786,11 +2926,31 @@ const ResourceViewer = ({ project }: { project: any }) => {
         <div className="h-full flex flex-col bg-zinc-50 dark:bg-zinc-950">
             <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-center justify-between shrink-0">
                 <div className="flex items-center gap-3 overflow-hidden"><div className="p-2 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 rounded-lg"><IconLink className="w-4 h-4" /></div><div className="min-w-0"><h2 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 truncate">{project.title}</h2><a href={project.url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-500 hover:underline truncate block">{project.url}</a></div></div>
-                <div className="flex items-center gap-4"><div className="text-right hidden sm:block"><div className="text-[10px] text-zinc-400 uppercase tracking-wider font-bold">Summary</div><div className="text-xs text-zinc-600 dark:text-zinc-400 max-w-[200px] truncate">{project.summary || 'No summary'}</div></div><a href={project.url} target="_blank" rel="noreferrer" className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-500 transition-colors" title="Open in new tab"><IconExternal className="w-4 h-4" /></a></div>
+                <div className="flex items-center gap-3">
+                    <button
+                        type="button"
+                        onClick={() => setIsCopilotContextCollapsed((value) => !value)}
+                        className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-medium transition-colors ${
+                            isCopilotContextCollapsed
+                                ? 'border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800'
+                                : 'border-zinc-200 bg-zinc-50 text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-300 dark:hover:bg-zinc-800'
+                        }`}
+                    >
+                        <span className={`flex h-6 w-6 items-center justify-center rounded-full ${
+                            isCopilotContextCollapsed
+                                ? 'border border-zinc-200/80 bg-white/[0.82] text-zinc-700 shadow-sm dark:border-white/[0.08] dark:bg-white/[0.08] dark:text-zinc-200'
+                                : 'bg-zinc-200/90 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200'
+                        }`}>
+                            {isCopilotContextCollapsed ? <IconArrowLeft className="w-3.5 h-3.5" /> : <IconSidebar className="w-3.5 h-3.5" />}
+                        </span>
+                        {isCopilotContextCollapsed ? copy.resourceView.showContext : copy.resourceView.hideContext}
+                    </button>
+                    <div className="flex items-center gap-4"><div className="text-right hidden sm:block"><div className="text-[10px] text-zinc-400 uppercase tracking-wider font-bold">{copy.resourceView.summary}</div><div className="text-xs text-zinc-600 dark:text-zinc-400 max-w-[200px] truncate">{project.summary || copy.resourceView.noSummary}</div></div><a href={project.url} target="_blank" rel="noreferrer" className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-500 transition-colors" title={copy.common.openInNewTab}><IconExternal className="w-4 h-4" /></a></div>
+                </div>
             </div>
             <div className="flex-1 overflow-hidden">
-                <div className="grid h-full grid-cols-1 xl:grid-cols-[minmax(0,1fr)_360px]">
-                    <div className="relative bg-white dark:bg-zinc-900 overflow-hidden border-b border-zinc-200 dark:border-zinc-800 xl:border-b-0 xl:border-r">
+                <div className={`grid h-full transition-[grid-template-columns] duration-300 ${isCopilotContextCollapsed ? 'grid-cols-1 xl:grid-cols-[minmax(0,1fr)_72px]' : 'grid-cols-1 xl:grid-cols-[minmax(0,1fr)_360px]'}`}>
+                    <div className={`relative bg-white dark:bg-zinc-900 overflow-hidden ${isCopilotContextCollapsed ? '' : 'border-b border-zinc-200 dark:border-zinc-800 xl:border-b-0 xl:border-r'}`}>
                         {!loadError ? (
                             <>
                                 {isLoading && <div className="absolute inset-0 flex items-center justify-center bg-zinc-50 dark:bg-zinc-900 z-10"><div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div></div>}
@@ -1799,35 +2959,70 @@ const ResourceViewer = ({ project }: { project: any }) => {
                         ) : (
                             <div className="flex flex-col items-center justify-center h-full p-8 text-center">
                                 <div className="w-16 h-16 bg-zinc-100 dark:bg-zinc-800 rounded-full flex items-center justify-center mb-4 text-zinc-400"><IconLink className="w-8 h-8" /></div>
-                                <h3 className="text-lg font-bold text-zinc-800 dark:text-zinc-200 mb-2">Preview Unavailable</h3>
-                                <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-6 max-w-sm">This website cannot be embedded directly due to security restrictions (X-Frame-Options).</p>
-                                <a href={project.url} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors shadow-sm">Open in New Tab</a>
+                                <h3 className="text-lg font-bold text-zinc-800 dark:text-zinc-200 mb-2">{copy.resourceView.previewUnavailable}</h3>
+                                <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-6 max-w-sm">{copy.resourceView.previewUnavailableHint}</p>
+                                <a href={project.url} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors shadow-sm">{copy.common.openInNewTab}</a>
                             </div>
                         )}
                     </div>
 
-                    <aside className="h-full overflow-y-auto bg-zinc-50/80 dark:bg-zinc-950/70 p-5">
-                        <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 shadow-sm">
-                            <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-400 mb-2">
-                                Copilot Context
+                    {isCopilotContextCollapsed ? (
+                        <aside className="hidden h-full border-l border-zinc-200 bg-zinc-50/90 dark:border-zinc-800 dark:bg-zinc-950/80 xl:flex">
+                            <button
+                                type="button"
+                                onClick={() => setIsCopilotContextCollapsed(false)}
+                                className="group flex h-full w-full flex-col items-center justify-center gap-4 px-2 text-zinc-400 transition-colors hover:text-zinc-900 dark:text-zinc-500 dark:hover:text-zinc-100"
+                                title="Show Context"
+                                aria-label="Show Context"
+                            >
+                                <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-zinc-200 bg-white text-zinc-700 shadow-sm transition-colors group-hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:group-hover:bg-zinc-800">
+                                    <IconArrowLeft className="w-4 h-4" />
+                                </div>
+                                <div
+                                    style={{ writingMode: 'vertical-rl' }}
+                                    className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-400 dark:text-zinc-500"
+                                >
+                                    {copy.resourceView.context}
+                                </div>
+                            </button>
+                        </aside>
+                    ) : (
+                        <aside className="h-full overflow-y-auto border-t border-zinc-200 bg-zinc-50/80 p-5 dark:border-zinc-800 dark:bg-zinc-950/70 xl:border-l xl:border-t-0">
+                            <div className="rounded-[24px] border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 shadow-sm">
+                                <div className="mb-4 flex items-start justify-between gap-3">
+                                    <div>
+                                        <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-400">
+                                            Copilot Context
+                                        </div>
+                                        <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                                            Paste text from the link
+                                        </h3>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsCopilotContextCollapsed(true)}
+                                        className="rounded-xl p-2 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+                                        title="Hide Context"
+                                        aria-label="Hide Context"
+                                    >
+                                        <IconArrowRight className="w-4 h-4" />
+                                    </button>
+                                </div>
+                                <p className="mb-4 text-xs leading-5 text-zinc-500 dark:text-zinc-400">
+                                    Copilot already sees the saved URL and summary. Paste excerpts, notes, or key paragraphs here if you want a deeper reading.
+                                </p>
+                                <textarea
+                                    className="min-h-[260px] w-full resize-none rounded-[22px] border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-4 py-3 text-sm leading-6 text-zinc-800 dark:text-zinc-100 outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
+                                    placeholder="Paste article excerpts, transcript text, rough notes, or your own take here. The copilot will read this when you ask it to explain or critique the link."
+                                    value={capturedText}
+                                    onChange={(e) => updateCapturedText(e.target.value)}
+                                />
+                                <div className="mt-4 rounded-2xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-[11px] leading-5 text-zinc-500 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400">
+                                    Try asking: “Summarize this link”, “Read https://example.com/research-notes and compare it with my notes”, “Pull out the key claims”, or “Critique this article.”
+                                </div>
                             </div>
-                            <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 mb-2">
-                                Paste text from the link
-                            </h3>
-                            <p className="text-xs leading-5 text-zinc-500 dark:text-zinc-400 mb-4">
-                                Copilot already sees the saved URL and summary. Paste excerpts, notes, or key paragraphs here if you want a deeper reading.
-                            </p>
-                            <textarea
-                                className="min-h-[260px] w-full resize-none rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-4 py-3 text-sm leading-6 text-zinc-800 dark:text-zinc-100 outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
-                                placeholder="Paste article excerpts, transcript text, rough notes, or your own take here. The copilot will read this when you ask it to explain or critique the link."
-                                value={capturedText}
-                                onChange={(e) => updateCapturedText(e.target.value)}
-                            />
-                            <div className="mt-4 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 px-3 py-2.5 text-[11px] leading-5 text-zinc-500 dark:text-zinc-400">
-                                Try asking: “Summarize this link”, “What is the main argument?”, “Pull out the key claims”, or “Critique this article.”
-                            </div>
-                        </div>
-                    </aside>
+                        </aside>
+                    )}
                 </div>
             </div>
         </div>
@@ -2024,8 +3219,10 @@ const AgentPanel = () => {
                             return (
                                 <div
                                     key={thread.id}
-                                    className={`group flex items-center gap-2 border-b border-zinc-100/80 px-2 py-1.5 last:border-b-0 dark:border-zinc-800/80 ${
-                                        isActive ? 'bg-zinc-50 dark:bg-zinc-800/50' : ''
+                                    className={`group mx-2 my-1 flex items-center gap-2 rounded-2xl border px-2 py-1.5 transition-all ${
+                                        isActive
+                                            ? SOFT_ACTIVE_SURFACE
+                                            : `border-transparent ${SOFT_HOVER_SURFACE}`
                                     }`}
                                 >
                                     <button
@@ -2060,7 +3257,7 @@ const AgentPanel = () => {
             <div className="flex-1 overflow-y-auto p-4 space-y-4" ref={scrollRef}>
                 {chatMessages.length === 0 && (
                     <div className="text-center text-zinc-400 text-xs mt-10">
-                        Ask me to read this note, interpret the saved link, explain a graph, or suggest the next move.
+                        Ask me to read this note, review all workspace files, inspect knowledge-base entries, explain a graph, or analyze a URL like https://example.com/research-notes.
                     </div>
                 )}
                 {chatMessages.map(msg => (
@@ -2087,7 +3284,7 @@ const AgentPanel = () => {
                 <div className="relative">
                     <input 
                         className="w-full pl-3 pr-10 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500" 
-                        placeholder="Ask the copilot to read, interpret, critique, expand, or sync..." 
+                        placeholder="Ask the copilot to review all files, read the knowledge base, or analyze https://example.com/research-notes..." 
                         value={input}
                         onChange={e => setInput(e.target.value)}
                         onKeyDown={e => e.key === 'Enter' && handleSend()}
@@ -2099,7 +3296,8 @@ const AgentPanel = () => {
     );
 };
 
-const GraphLayersPanel = ({ isOpen, onToggle }: { isOpen: boolean, onToggle: () => void }) => {
+const GraphLayersPanel = ({ isOpen, onToggle, language }: { isOpen: boolean, onToggle: () => void, language: AppLanguage }) => {
+    const copy = getUIText(language);
     const nodes = useStore(s => s.nodes);
     const activeGraphFilters = useStore(s => s.activeGraphFilters);
     const toggleGraphFilter = useStore(s => s.toggleGraphFilter);
@@ -2119,16 +3317,16 @@ const GraphLayersPanel = ({ isOpen, onToggle }: { isOpen: boolean, onToggle: () 
         <div className="relative z-50">
             <button 
                 onClick={onToggle} 
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${isOpen ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100' : 'text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-600 dark:hover:text-zinc-300'}`}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-2xl border text-xs font-medium transition-all ${isOpen ? `${SOFT_ACTIVE_SURFACE} text-zinc-900 dark:text-zinc-100` : `border-transparent text-zinc-400 ${SOFT_HOVER_SURFACE} hover:text-zinc-600 dark:hover:text-zinc-300`}`}
             >
                 <IconLayers className="w-3.5 h-3.5" />
-                Layers
+                {copy.editor.layers}
             </button>
             {isOpen && (
                 <>
                 <div className="fixed inset-0 z-40" onClick={onToggle} />
                 <div className="absolute top-10 left-0 bg-white/95 dark:bg-zinc-900/95 backdrop-blur border border-zinc-200 dark:border-zinc-800 p-3 rounded-lg shadow-xl w-48 z-50">
-                    <h4 className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-2 pb-1 border-b border-zinc-100 dark:border-zinc-800">Visible Sources</h4>
+                    <h4 className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-2 pb-1 border-b border-zinc-100 dark:border-zinc-800">{copy.editor.visibleSources}</h4>
                     <div className="space-y-1 max-h-60 overflow-y-auto">
                         {sources.map(source => (
                             <label key={source} className="flex items-center gap-2 cursor-pointer text-xs hover:bg-zinc-50 dark:hover:bg-zinc-800 p-1.5 rounded transition-colors">
@@ -2154,6 +3352,7 @@ const GraphLayersPanel = ({ isOpen, onToggle }: { isOpen: boolean, onToggle: () 
 // --- Editor Logic Refactored to Fix Provider Issue ---
 
 const FlowEditor = ({ activeProject, theme, nodeTypes, onRename, language }: any) => { // Added onRename prop
+    const copy = getUIText(language);
     const { 
         nodes, edges, onNodesChange, onEdgesChange, onConnect,
         onNodesDelete, onEdgesDelete,
@@ -2218,7 +3417,7 @@ const FlowEditor = ({ activeProject, theme, nodeTypes, onRename, language }: any
                 {/* Editor Header */}
                 <div className="h-14 border-b border-zinc-200/50 dark:border-zinc-800/50 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl flex items-center justify-between px-6 z-20 sticky top-0">
                     <div className="flex items-center gap-3">
-                         <button onClick={() => setView('dashboard')} className="p-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 transition-colors mr-2" title="Back to Dashboard"><IconArrowLeft className="w-4 h-4" /></button>
+                         <button onClick={() => setView('dashboard')} className="p-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 transition-colors mr-2" title={copy.editor.backToDashboard}><IconArrowLeft className="w-4 h-4" /></button>
                          <div className="h-6 w-px bg-zinc-200 dark:bg-zinc-800 mx-1"></div>
                          <div className={`p-1.5 rounded-lg ${activeProject.type === 'graph' ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-300' : activeProject.type === 'note' ? 'bg-yellow-100 dark:bg-yellow-900/40 text-yellow-600 dark:text-yellow-300' : 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-300'}`}>{activeProject.type === 'graph' ? <IconGraph /> : activeProject.type === 'note' ? <IconEdit /> : <IconLink />}</div>
                          
@@ -2226,7 +3425,7 @@ const FlowEditor = ({ activeProject, theme, nodeTypes, onRename, language }: any
                          <div 
                             className="flex flex-col justify-center cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800 px-2 py-1 rounded transition-colors group"
                             onClick={() => onRename && onRename(activeProject)}
-                            title="Click to rename"
+                            title={copy.editor.clickToRename}
                          >
                             <div className="flex items-center gap-2">
                                 <h1 className="font-semibold text-zinc-800 dark:text-zinc-200 text-sm">{activeProject.title}</h1>
@@ -2234,7 +3433,7 @@ const FlowEditor = ({ activeProject, theme, nodeTypes, onRename, language }: any
                             </div>
                          </div>
 
-                         {activeProject.unsavedChanges && <span className="text-[10px] text-orange-500 font-medium ml-2">Unsaved changes</span>}
+                         {activeProject.unsavedChanges && <span className="text-[10px] text-orange-500 font-medium ml-2">{copy.editor.unsavedChanges}</span>}
                     </div>
                     
                     <div className="flex items-center gap-3">
@@ -2247,11 +3446,12 @@ const FlowEditor = ({ activeProject, theme, nodeTypes, onRename, language }: any
                                     title="Sync graph structure with database changes"
                                 >
                                     <IconRefresh className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-                                    {isSyncing ? 'Syncing...' : 'Sync'}
+                                    {isSyncing ? copy.editor.syncing : copy.editor.sync}
                                 </button>
                                 <GraphLayersPanel 
                                     isOpen={activePopover === 'layers'} 
                                     onToggle={() => setActivePopover(activePopover === 'layers' ? null : 'layers')}
+                                    language={language}
                                 />
                              </>
                          )}
@@ -2270,8 +3470,9 @@ const FlowEditor = ({ activeProject, theme, nodeTypes, onRename, language }: any
                             projectId={activeProject.id} 
                             isOpen={activePopover === 'database'} 
                             onToggle={() => setActivePopover(activePopover === 'database' ? null : 'database')}
+                            language={language}
                         />
-                        <button onClick={() => { saveProject(); }} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${activeProject.unsavedChanges ? 'bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 shadow-md' : 'text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}><IconSave className="w-3.5 h-3.5" />{activeProject.unsavedChanges ? 'Save' : 'Saved'}</button>
+                        <button onClick={() => { saveProject(); }} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${activeProject.unsavedChanges ? 'bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 shadow-md' : 'text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}><IconSave className="w-3.5 h-3.5" />{activeProject.unsavedChanges ? copy.common.save : copy.editor.saved}</button>
                     </div>
                 </div>
 
@@ -2333,7 +3534,7 @@ const FlowEditor = ({ activeProject, theme, nodeTypes, onRename, language }: any
                          </div>
                     )}
                     {activeProject.type === 'note' && <NoteEditor language={language} />}
-                    {activeProject.type === 'resource' && <ResourceViewer project={activeProject} />}
+                    {activeProject.type === 'resource' && <ResourceViewer project={activeProject} language={language} />}
                 </div>
             </div>
             <AgentPanel />
@@ -2348,7 +3549,7 @@ export default function App() {
   const copy = getUIText(language);
   const { 
     activeProjectId, isSidebarCollapsed, toggleSidebar,
-    currentView, setView, projects, availableTags, saveProject, theme, toggleTheme,
+    currentView, setView, projects, availableTags, databases, saveProject, theme, toggleTheme,
     deleteProject, editingNodeId, replaceWorkspace
   } = useStore();
   const [currentUser, setCurrentUser] = useState<SessionUser | null>(() => getCurrentUser());
@@ -2366,8 +3567,8 @@ export default function App() {
   
   const activeProject = projects.find(p => p.id === activeProjectId);
   const workspaceSnapshot = useMemo(
-    () => getWorkspaceSnapshotFromState({ projects, availableTags, theme }),
-    [projects, availableTags, theme]
+    () => getWorkspaceSnapshotFromState({ projects, availableTags, databases, theme }),
+    [projects, availableTags, databases, theme]
   );
   const workspaceSignature = useMemo(
     () => JSON.stringify(workspaceSnapshot),
@@ -2580,9 +3781,9 @@ export default function App() {
   const renderContent = () => {
     switch (currentView) {
       case 'dashboard':
-        return <DashboardView onCreateProject={() => setIsNewProjectModalOpen(true)} onRename={(p: any) => setProjectToRename(p)} onDelete={handleDelete} onShare={(p: any) => setProjectToShare(p)} />;
+        return <DashboardView language={language} onCreateProject={() => setIsNewProjectModalOpen(true)} onRename={(p: any) => setProjectToRename(p)} onDelete={handleDelete} onShare={(p: any) => setProjectToShare(p)} />;
       case 'library':
-        return <LibraryView onRename={(p: any) => setProjectToRename(p)} onDelete={handleDelete} onShare={(p: any) => setProjectToShare(p)} onShareDatabase={(db: string) => setDatabaseToShare(db)} />;
+        return <LibraryView language={language} onRename={(p: any) => setProjectToRename(p)} onDelete={handleDelete} onShare={(p: any) => setProjectToShare(p)} onShareDatabase={(db: string) => setDatabaseToShare(db)} />;
       case 'editor':
         if (!activeProject) return <div className="flex items-center justify-center h-full text-zinc-400">{copy.shell.selectProject}</div>;
         // WRAP Editor in ReactFlowProvider to fix hook errors
@@ -2597,10 +3798,25 @@ export default function App() {
                 />
             </ReactFlowProvider>
         );
-      case 'boards': return <GeneratorView />;
-      case 'friends': return <FriendsView mode="friends" />;
-      case 'team': return <FriendsView mode="team" />;
-      case 'settings': return <SettingsView currentUser={currentUser} onUserChange={setCurrentUser} onLogout={handleLogout} language={language} onLanguageChange={setLanguage} />;
+      case 'boards': return <GeneratorView language={language} />;
+      case 'friends': return <FriendsView mode="friends" language={language} />;
+      case 'team': return <FriendsView mode="team" language={language} />;
+      case 'settings':
+        return (
+            <SettingsView
+                currentUser={currentUser}
+                onUserChange={setCurrentUser}
+                onLogout={handleLogoutClick}
+                language={language}
+                onLanguageChange={setLanguage}
+                theme={theme}
+                onThemeChange={(nextTheme: Theme) => {
+                    if (nextTheme !== theme) {
+                        toggleTheme();
+                    }
+                }}
+            />
+        );
       default: return <div className="flex items-center justify-center h-full text-zinc-400">{copy.shell.workInProgress}</div>;
     }
   };
@@ -2617,30 +3833,34 @@ export default function App() {
           <div>
               {!isSidebarCollapsed && <div className="px-3 mb-2 text-[10px] font-bold text-zinc-400 uppercase tracking-widest">{copy.shell.workspaceSection}</div>}
               <div className="space-y-1">
-                  <button onClick={() => setView('dashboard')} className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all ${currentView === 'dashboard' ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100' : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 hover:text-zinc-900 dark:hover:text-zinc-100'}`}><IconHome />{!isSidebarCollapsed && <span>{copy.shell.workspace}</span>}</button>
-                  <button onClick={() => setView('boards')} className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all ${currentView === 'boards' ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100' : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 hover:text-zinc-900 dark:hover:text-zinc-100'}`}><IconGraph />{!isSidebarCollapsed && <span>{copy.shell.generator}</span>}</button>
+                  <button onClick={() => setView('dashboard')} className={`w-full flex items-center gap-3 rounded-2xl border px-3 py-2.5 text-sm font-medium transition-all ${isSidebarCollapsed ? 'justify-center' : ''} ${currentView === 'dashboard' ? `${SOFT_ACTIVE_SURFACE} text-zinc-900 dark:text-zinc-100` : `border-transparent text-zinc-500 dark:text-zinc-400 ${SOFT_HOVER_SURFACE} hover:text-zinc-900 dark:hover:text-zinc-100`}`}><IconHome />{!isSidebarCollapsed && <span>{copy.shell.workspace}</span>}</button>
+                  <button onClick={() => setView('boards')} className={`w-full flex items-center gap-3 rounded-2xl border px-3 py-2.5 text-sm font-medium transition-all ${isSidebarCollapsed ? 'justify-center' : ''} ${currentView === 'boards' ? `${SOFT_ACTIVE_SURFACE} text-zinc-900 dark:text-zinc-100` : `border-transparent text-zinc-500 dark:text-zinc-400 ${SOFT_HOVER_SURFACE} hover:text-zinc-900 dark:hover:text-zinc-100`}`}><IconGraph />{!isSidebarCollapsed && <span>{copy.shell.generator}</span>}</button>
               </div>
           </div>
           <div>
               {!isSidebarCollapsed && <div className="px-3 mb-2 text-[10px] font-bold text-zinc-400 uppercase tracking-widest">{copy.shell.knowledge}</div>}
               <div className="space-y-1">
-                  <button onClick={() => setView('library')} className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all ${currentView === 'library' ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100' : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 hover:text-zinc-900 dark:hover:text-zinc-100'}`}><IconDatabase />{!isSidebarCollapsed && <span>{copy.shell.library}</span>}</button>
+                  <button onClick={() => setView('library')} className={`w-full flex items-center gap-3 rounded-2xl border px-3 py-2.5 text-sm font-medium transition-all ${isSidebarCollapsed ? 'justify-center' : ''} ${currentView === 'library' ? `${SOFT_ACTIVE_SURFACE} text-zinc-900 dark:text-zinc-100` : `border-transparent text-zinc-500 dark:text-zinc-400 ${SOFT_HOVER_SURFACE} hover:text-zinc-900 dark:hover:text-zinc-100`}`}><IconDatabase />{!isSidebarCollapsed && <span>{copy.shell.library}</span>}</button>
               </div>
           </div>
           <div>
               {!isSidebarCollapsed && <div className="px-3 mb-2 text-[10px] font-bold text-zinc-400 uppercase tracking-widest">{copy.shell.social}</div>}
               <div className="space-y-1">
-                  <button onClick={() => setView('friends')} className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all ${currentView === 'friends' ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100' : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 hover:text-zinc-900 dark:hover:text-zinc-100'}`}><IconUser />{!isSidebarCollapsed && <span>{copy.shell.friends}</span>}</button>
-                  <button onClick={() => setView('team')} className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all ${currentView === 'team' ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100' : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 hover:text-zinc-900 dark:hover:text-zinc-100'}`}><IconUsers />{!isSidebarCollapsed && <span>{copy.shell.team}</span>}</button>
+                  <button onClick={() => setView('friends')} className={`w-full flex items-center gap-3 rounded-2xl border px-3 py-2.5 text-sm font-medium transition-all ${isSidebarCollapsed ? 'justify-center' : ''} ${currentView === 'friends' ? `${SOFT_ACTIVE_SURFACE} text-zinc-900 dark:text-zinc-100` : `border-transparent text-zinc-500 dark:text-zinc-400 ${SOFT_HOVER_SURFACE} hover:text-zinc-900 dark:hover:text-zinc-100`}`}><IconUser />{!isSidebarCollapsed && <span>{copy.shell.friends}</span>}</button>
+                  <button onClick={() => setView('team')} className={`w-full flex items-center gap-3 rounded-2xl border px-3 py-2.5 text-sm font-medium transition-all ${isSidebarCollapsed ? 'justify-center' : ''} ${currentView === 'team' ? `${SOFT_ACTIVE_SURFACE} text-zinc-900 dark:text-zinc-100` : `border-transparent text-zinc-500 dark:text-zinc-400 ${SOFT_HOVER_SURFACE} hover:text-zinc-900 dark:hover:text-zinc-100`}`}><IconUsers />{!isSidebarCollapsed && <span>{copy.shell.team}</span>}</button>
               </div>
           </div>
         </nav>
         <div className="p-4 border-t border-zinc-100 dark:border-zinc-800 bg-white/50 dark:bg-zinc-900/50 backdrop-blur-md">
           <div className="flex items-center justify-between">
               <button onClick={() => setView('settings')} className="flex items-center gap-3 hover:bg-zinc-100/50 dark:hover:bg-zinc-800/50 p-2 rounded-lg transition-colors group flex-1">
-                 <div className="w-8 h-8 rounded-full bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 border border-zinc-300 dark:border-zinc-600 flex items-center justify-center text-xs font-semibold">
-                    {currentUser.initials}
-                 </div>
+                 <AvatarBadge
+                    avatarUrl={currentUser.avatarUrl}
+                    initials={currentUser.initials}
+                    name={currentUser.displayName}
+                    className="w-8 h-8 rounded-full border border-zinc-300 dark:border-zinc-600"
+                    textClassName="text-xs font-semibold"
+                 />
                  {!isSidebarCollapsed && (<div className="flex-1 overflow-hidden text-left"><div className="text-sm font-medium text-zinc-700 dark:text-zinc-300 truncate group-hover:text-blue-600 dark:group-hover:text-blue-400">{currentUser.displayName}</div><div className="text-xs text-zinc-400">{currentUser.plan}</div></div>)}
               </button>
               <div className="flex items-center gap-1 ml-1">
@@ -2665,9 +3885,9 @@ export default function App() {
       <main className="flex-1 h-full overflow-hidden relative">{renderContent()}</main>
       {isNewProjectModalOpen && <NewProjectModal onClose={() => setIsNewProjectModalOpen(false)} />}
       {editingNodeId && <NodeEditModal />}
-      {projectToRename && <RenameModal project={projectToRename} onClose={() => setProjectToRename(null)} />}
-      {projectToShare && <ShareModal entity={projectToShare} type="project" onClose={() => setProjectToShare(null)} />}
-      {databaseToShare && <ShareModal entity={databaseToShare} type="database" onClose={() => setDatabaseToShare(null)} />}
+      {projectToRename && <RenameModal project={projectToRename} language={language} onClose={() => setProjectToRename(null)} />}
+      {projectToShare && <ShareModal entity={projectToShare} type="project" language={language} onClose={() => setProjectToShare(null)} />}
+      {databaseToShare && <ShareModal entity={databaseToShare} type="database" language={language} onClose={() => setDatabaseToShare(null)} />}
     </div>
   );
 }

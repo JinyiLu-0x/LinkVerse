@@ -6,6 +6,15 @@ export type ProjectType = 'graph' | 'note' | 'resource';
 
 export type Theme = 'light' | 'dark';
 
+export type DatabaseIconType = 'folder' | 'emoji';
+
+export type DatabaseDefinition = {
+  name: string;
+  color: string;
+  iconType: DatabaseIconType;
+  emoji?: string;
+};
+
 export type ViewState = {
   x: number;
   y: number;
@@ -125,6 +134,7 @@ export interface MindMapState {
   // --- Data State ---
   projects: Project[];
   availableTags: string[];
+  databases: DatabaseDefinition[];
   friends: Friend[];
   groups: Group[];
   directMessages: DirectMessage[];
@@ -162,8 +172,9 @@ export interface MindMapState {
   removeProjectFromDatabase: (projectId: string, tag: string) => void;
   
   // Database CRUD
-  createDatabase: (name: string) => void;
+  createDatabase: (name: string, options?: Partial<DatabaseDefinition>) => void;
   renameDatabase: (oldName: string, newName: string) => void;
+  updateDatabase: (name: string, updates: Partial<DatabaseDefinition>) => void;
   deleteDatabase: (name: string) => void;
 
   shareProject: (projectId: string, friendIds: string[]) => void;

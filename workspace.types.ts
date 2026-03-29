@@ -1,7 +1,8 @@
-import type { Project, Theme } from './types';
+import type { DatabaseDefinition, Project, Theme } from './types';
 
 export type WorkspaceSnapshot = {
   projects: Project[];
   availableTags: string[];
+  databases: DatabaseDefinition[];
   theme: Theme;
 };

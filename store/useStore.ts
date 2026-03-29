@@ -12,7 +12,7 @@ import {
   Node,
   Edge
 } from 'reactflow';
-import { MindMapState, MindMapNode, ViewType, Project, ProjectType, ChatMessage, CopilotThread, Friend, DirectMessage, Group, Theme, ViewState } from '../types';
+import { MindMapState, MindMapNode, ViewType, Project, ProjectType, ChatMessage, CopilotThread, Friend, DirectMessage, Group, Theme, ViewState, DatabaseDefinition } from '../types';
 import type { WorkspaceSnapshot } from '../workspace.types';
 import { GoogleGenAI, FunctionDeclaration, Type } from "@google/genai";
 import { AI_CONFIG, getResolvedAIConfig, hasConfiguredAI } from '../ai.config';
@@ -522,6 +522,65 @@ const allTags = new Set([
     'Graphs'
 ]);
 
+export const DATABASE_COLOR_SPECTRUM = [
+    '#5B8DEF',
+    '#31B099',
+    '#E88B2E',
+    '#E15C86',
+    '#8B7CFF',
+    '#E05A47',
+    '#2FA7D8',
+    '#6E9F48',
+    '#C56CF0',
+    '#D4A534',
+    '#64748B',
+    '#F97316',
+];
+
+const DEFAULT_DATABASE_COLOR = DATABASE_COLOR_SPECTRUM[0];
+
+const buildDefaultDatabaseColor = (name: string, index = 0) => {
+    const seed = Array.from(name).reduce((sum, char) => sum + char.charCodeAt(0), index);
+    return DATABASE_COLOR_SPECTRUM[seed % DATABASE_COLOR_SPECTRUM.length] || DEFAULT_DATABASE_COLOR;
+};
+
+const buildDatabaseDefinition = (
+    name: string,
+    overrides: Partial<DatabaseDefinition> = {},
+    index = 0,
+): DatabaseDefinition => {
+    const trimmedName = name.trim();
+    return {
+        name: trimmedName,
+        color: overrides.color || buildDefaultDatabaseColor(trimmedName, index),
+        iconType: overrides.iconType === 'emoji' ? 'emoji' : 'folder',
+        emoji:
+            overrides.iconType === 'emoji' && typeof overrides.emoji === 'string'
+                ? overrides.emoji.trim()
+                : undefined,
+    };
+};
+
+const buildDatabaseDefinitions = (
+    availableTags: string[],
+    persistedDatabases: Partial<DatabaseDefinition>[] = [],
+) => {
+    const persistedMap = new Map(
+        persistedDatabases
+            .filter((database): database is Partial<DatabaseDefinition> & { name: string } => typeof database?.name === 'string' && Boolean(database.name.trim()))
+            .map((database) => [database.name.trim(), database])
+    );
+
+    return availableTags
+        .filter((tag) => tag !== 'Inbox')
+        .map((tag, index) => buildDatabaseDefinition(tag, persistedMap.get(tag), index));
+};
+
+const syncDatabasesWithTags = (
+    availableTags: string[],
+    currentDatabases: Partial<DatabaseDefinition>[] = [],
+) => buildDatabaseDefinitions(availableTags, currentDatabases);
+
 const mergeStarterProjects = (persistedProjects: Project[] = []) => {
     const normalizedPersistedProjects = persistedProjects
         .map((project, index) => normalizeProject(project, index))
@@ -542,18 +601,25 @@ const buildAvailableTags = (projects: Project[], persistedTags: string[] = []) =
 
 export const createDefaultWorkspaceSnapshot = (): WorkspaceSnapshot => {
     const projects = mergeStarterProjects([]);
+    const availableTags = buildAvailableTags(projects, []);
     return {
         projects,
-        availableTags: buildAvailableTags(projects, []),
+        availableTags,
+        databases: buildDatabaseDefinitions(availableTags, []),
         theme: 'light',
     };
 };
 
 export const normalizeWorkspaceSnapshot = (snapshot?: Partial<WorkspaceSnapshot> | null): WorkspaceSnapshot => {
     const projects = mergeStarterProjects(Array.isArray(snapshot?.projects) ? snapshot.projects : []);
+    const availableTags = buildAvailableTags(projects, Array.isArray(snapshot?.availableTags) ? snapshot.availableTags : []);
     return {
         projects,
-        availableTags: buildAvailableTags(projects, Array.isArray(snapshot?.availableTags) ? snapshot.availableTags : []),
+        availableTags,
+        databases: buildDatabaseDefinitions(
+            availableTags,
+            Array.isArray(snapshot?.databases) ? snapshot.databases : []
+        ),
         theme: snapshot?.theme === 'dark' ? 'dark' : 'light',
     };
 };
@@ -561,6 +627,7 @@ export const normalizeWorkspaceSnapshot = (snapshot?: Partial<WorkspaceSnapshot>
 export const getWorkspaceSnapshotFromState = (state: WorkspaceSnapshot): WorkspaceSnapshot => ({
     projects: state.projects,
     availableTags: state.availableTags,
+    databases: state.databases,
     theme: state.theme,
 });
 
@@ -856,11 +923,56 @@ const buildRelatedKnowledgeContext = (project: Project, projects: Project[]) => 
   ].join('\n\n');
 };
 
-const buildProjectReadingContext = (project: Project, activeProjectContent: string, projects: Project[]) => {
+const buildWorkspaceIndexContext = (projects: Project[], activeProjectId?: string | null) => {
+  if (projects.length === 0) {
+    return 'Workspace file index: none.';
+  }
+
+  return [
+    'Workspace file index:',
+    ...projects.map((candidate, index) => {
+      const activeMarker = candidate.id === activeProjectId ? ' [active]' : '';
+      return `${index + 1}. ${candidate.title}${activeMarker} (${candidate.type}) [tags: ${candidate.databaseTags.join(', ') || 'none'}]`;
+    }),
+  ].join('\n');
+};
+
+const buildWorkspaceKnowledgeBaseContext = (projects: Project[], activeProjectId?: string | null) => {
+  if (projects.length === 0) {
+    return 'Workspace knowledge base files: none.';
+  }
+
+  return [
+    'Workspace knowledge base files:',
+    ...projects.map((candidate, index) => {
+      const activeMarker = candidate.id === activeProjectId ? ' [active file]' : '';
+      return `${index + 1}. ${candidate.title}${activeMarker} (${candidate.type}) [tags: ${candidate.databaseTags.join(', ') || 'none'}]\n${truncateForAI(buildKnowledgeItemSnippet(candidate), 420)}`;
+    }),
+  ].join('\n\n');
+};
+
+const shouldIncludeWorkspaceKnowledgeBase = (userText: string) =>
+  /(all files|all file|entire workspace|whole workspace|workspace-wide|across the workspace|knowledge base|knowledgebase|library files|all notes|all docs|all documents|all resources|saved links|所有文件|全部文件|整个工作区|全工作区|知识库|资料库|所有笔记|全部笔记|所有文档|全部文档|所有资料|全部资料|所有链接|全部链接)/i.test(
+    userText
+  );
+
+const buildProjectReadingContext = (
+  project: Project,
+  activeProjectContent: string,
+  projects: Project[],
+  options?: { includeWorkspaceKnowledgeBase?: boolean }
+) => {
+  const sections = [buildWorkspaceIndexContext(projects, project.id)];
+
   if (project.type === 'graph') {
     const graphContext = buildGraphContext(project, project.nodes, project.edges);
     const relatedContext = buildRelatedKnowledgeContext(project, projects);
-    return `${graphContext}\n\n${relatedContext}`;
+    sections.unshift(`Active file context:\n${graphContext}`);
+    sections.push(relatedContext);
+    if (options?.includeWorkspaceKnowledgeBase) {
+      sections.push(buildWorkspaceKnowledgeBaseContext(projects, project.id));
+    }
+    return sections.join('\n\n');
   }
 
   if (project.type === 'resource') {
@@ -877,17 +989,27 @@ const buildProjectReadingContext = (project: Project, activeProjectContent: stri
       buildRelatedKnowledgeContext(project, projects),
     ];
 
-    return resourceSections.join('\n\n');
+    sections.unshift(`Active file context:\n${resourceSections.join('\n\n')}`);
+    if (options?.includeWorkspaceKnowledgeBase) {
+      sections.push(buildWorkspaceKnowledgeBaseContext(projects, project.id));
+    }
+    return sections.join('\n\n');
   }
 
   const noteContent = activeProjectContent || project.content || '';
-  return [
-    `Project: ${project.title}`,
-    'Type: note',
-    `Tags: ${project.databaseTags.join(', ') || 'none'}`,
-    noteContent ? `Note content:\n${truncateForAI(noteContent, 2200)}` : 'Note content:\nThis note is still empty.',
-    buildRelatedKnowledgeContext(project, projects),
-  ].join('\n\n');
+  sections.unshift(
+    `Active file context:\n${[
+      `Project: ${project.title}`,
+      'Type: note',
+      `Tags: ${project.databaseTags.join(', ') || 'none'}`,
+      noteContent ? `Note content:\n${truncateForAI(noteContent, 2200)}` : 'Note content:\nThis note is still empty.',
+      buildRelatedKnowledgeContext(project, projects),
+    ].join('\n\n')}`
+  );
+  if (options?.includeWorkspaceKnowledgeBase) {
+    sections.push(buildWorkspaceKnowledgeBaseContext(projects, project.id));
+  }
+  return sections.join('\n\n');
 };
 
 const buildCopilotPrompt = (userText: string, context: string, toolsEnabled: boolean) => {
@@ -898,17 +1020,20 @@ const buildCopilotPrompt = (userText: string, context: string, toolsEnabled: boo
     : 'Do not call tools for this request. Answer directly.';
 
   return `
-You are LinkVerse Workspace Copilot, a sharp and helpful assistant for reading and improving mind graphs.
+You are LinkVerse Workspace Copilot, a rigorous assistant for reading, comparing, and improving workspace files.
 ${languageInstruction}
 
 Behavior rules:
-1. If the user asks what a graph means, explain it confidently from the current nodes and edges. Never say you cannot understand the graph.
-2. Start with the whole-picture reading, then break down the most important branches or tensions.
-3. If the request is not directly editable from chat, do not blame internal tools or capabilities. Briefly explain the limitation, then offer the closest helpful guidance or manual step.
-4. Keep the tone concise, thoughtful, and product-savvy rather than robotic.
-5. Use clean Markdown with short paragraphs and flat bullet lists when it improves readability. Use **bold** only for key terms. Avoid tables unless the user explicitly asks for one.
-6. When a saved link or resource is in context, use its URL, saved summary, and any captured text or notes to interpret it. If the user wants a deeper reading but only a bare URL is available, ask for pasted excerpts or notes.
-7. ${toolInstruction}
+1. Treat notes, graphs, resources, saved links, and knowledge-base entries as workspace files. Read across all provided context sections before answering.
+2. Ground every answer in the provided workspace context. Do not invent files, nodes, claims, article content, or knowledge that is not present.
+3. If the user asks what a graph means, explain it confidently from the current nodes and edges. Never say you cannot understand the graph when graph context is present.
+4. Start with the overall read, then break down the most important branches, files, tensions, or patterns.
+5. When the user asks about all files, the whole workspace, or the knowledge base, synthesize across the full workspace index and all provided knowledge-base file snippets. Name the most relevant files explicitly.
+6. When a saved link or resource is in context, use its URL, saved summary, and captured text or notes. Do not pretend you visited live web content beyond what is provided here.
+7. If the user requests a deeper reading but only a bare URL is available, ask for pasted excerpts, notes, or captured text.
+8. If the request is not directly editable from chat, do not blame internal tools or hidden capabilities. Briefly explain the limit, then offer the closest helpful next step.
+9. Keep the tone concise, thoughtful, and product-savvy. Use clean Markdown with short paragraphs and flat bullet lists when they help. Use **bold** only for key terms. Avoid tables unless explicitly requested.
+10. ${toolInstruction}
 
 Workspace context:
 ${context}
@@ -1043,6 +1168,7 @@ export const useStore = create<StoreState>()(
       groups: initialGroups,
       directMessages: initialDirectMessages,
       availableTags: Array.from(allTags),
+      databases: buildDatabaseDefinitions(Array.from(allTags), []),
 
       nodes: [],
       edges: [],
@@ -1066,6 +1192,7 @@ export const useStore = create<StoreState>()(
           set({
               projects: workspace.projects,
               availableTags: workspace.availableTags,
+              databases: workspace.databases,
               theme: workspace.theme,
               activeProjectId: null,
               nodes: [],
@@ -1315,19 +1442,23 @@ export const useStore = create<StoreState>()(
             newProject.summary = "Click 'Summarize' in the Agent panel to analyze this resource.";
         }
 
-        set(state => ({
-          projects: [newProject, ...state.projects],
-          activeProjectId: newId,
-          nodes: newProject.nodes,
-          edges: newProject.edges,
-          activeProjectContent: newProject.content || '',
-          chatMessages: [],
-          copilotThreads: newProject.copilotThreads,
-          activeCopilotThreadId: newProject.activeCopilotThreadId,
-          availableTags: Array.from(new Set([...state.availableTags, ...defaultTags])),
-          currentView: 'editor',
-          activeGraphFilters: [] // Default for new graph
-        }));
+        set(state => {
+          const nextAvailableTags = Array.from(new Set([...state.availableTags, ...defaultTags]));
+          return {
+            projects: [newProject, ...state.projects],
+            activeProjectId: newId,
+            nodes: newProject.nodes,
+            edges: newProject.edges,
+            activeProjectContent: newProject.content || '',
+            chatMessages: [],
+            copilotThreads: newProject.copilotThreads,
+            activeCopilotThreadId: newProject.activeCopilotThreadId,
+            availableTags: nextAvailableTags,
+            databases: syncDatabasesWithTags(nextAvailableTags, state.databases),
+            currentView: 'editor',
+            activeGraphFilters: [] // Default for new graph
+          };
+        });
       },
 
       saveProject: () => {
@@ -1443,6 +1574,7 @@ export const useStore = create<StoreState>()(
 
           return {
             availableTags: newAvailableTags,
+            databases: syncDatabasesWithTags(newAvailableTags, state.databases),
             projects: state.projects.map(p => {
                 if (p.id !== projectId) return p;
                 const newTags = [...p.databaseTags, tag].filter(t => t !== 'Inbox' || tag === 'Inbox');
@@ -1462,20 +1594,78 @@ export const useStore = create<StoreState>()(
         }));
       },
 
-      createDatabase: (name: string) => {
-          set(state => ({
-              availableTags: state.availableTags.includes(name) ? state.availableTags : [...state.availableTags, name]
-          }));
+      createDatabase: (name: string, options?: Partial<DatabaseDefinition>) => {
+          const trimmedName = name.trim();
+          if (!trimmedName) return;
+
+          set(state => {
+              if (state.availableTags.includes(trimmedName)) {
+                  return {
+                      databases: syncDatabasesWithTags(
+                          state.availableTags,
+                          state.databases.map((database) =>
+                              database.name === trimmedName
+                                  ? { ...database, ...options, name: trimmedName }
+                                  : database
+                          )
+                      ),
+                  };
+              }
+
+              const nextAvailableTags = [...state.availableTags, trimmedName];
+              const nextDatabases = syncDatabasesWithTags(nextAvailableTags, [
+                  ...state.databases,
+                  buildDatabaseDefinition(trimmedName, options, state.databases.length),
+              ]);
+
+              return {
+                  availableTags: nextAvailableTags,
+                  databases: nextDatabases,
+              };
+          });
       },
 
       renameDatabase: (oldName: string, newName: string) => {
+          get().updateDatabase(oldName, { name: newName });
+      },
+
+      updateDatabase: (name: string, updates: Partial<DatabaseDefinition>) => {
+          const nextName = typeof updates.name === 'string' ? updates.name.trim() : name;
+          if (!nextName) return;
+
           set(state => {
-              const newTags = state.availableTags.map(t => t === oldName ? newName : t);
-              const newProjects = state.projects.map(p => ({
-                  ...p,
-                  databaseTags: p.databaseTags.map(t => t === oldName ? newName : t)
+              const nameTaken = nextName !== name && state.availableTags.includes(nextName);
+              if (nameTaken) {
+                  return {};
+              }
+
+              const nextAvailableTags = state.availableTags.map((tag) => tag === name ? nextName : tag);
+              const nextProjects = state.projects.map((project) => ({
+                  ...project,
+                  databaseTags: project.databaseTags.map((tag) => tag === name ? nextName : tag),
               }));
-              return { availableTags: newTags, projects: newProjects };
+              const nextDatabases = syncDatabasesWithTags(
+                  nextAvailableTags,
+                  state.databases.map((database) =>
+                      database.name === name
+                          ? {
+                              ...database,
+                              ...updates,
+                              name: nextName,
+                              emoji:
+                                  (updates.iconType || database.iconType) === 'emoji'
+                                      ? (updates.emoji ?? database.emoji ?? '').trim()
+                                      : undefined,
+                          }
+                          : database
+                  )
+              );
+
+              return {
+                  availableTags: nextAvailableTags,
+                  projects: nextProjects,
+                  databases: nextDatabases,
+              };
           });
       },
 
@@ -1486,7 +1676,11 @@ export const useStore = create<StoreState>()(
                   ...p,
                   databaseTags: p.databaseTags.filter(t => t !== name)
               }));
-              return { availableTags: newTags, projects: newProjects };
+              return {
+                  availableTags: newTags,
+                  projects: newProjects,
+                  databases: state.databases.filter((database) => database.name !== name),
+              };
           });
       },
 
@@ -1635,10 +1829,14 @@ export const useStore = create<StoreState>()(
             viewState: { x: 0, y: 0, zoom: 1, isMiniMapOpen: true }
         };
 
-        set(state => ({
-          projects: [newSnippet, ...state.projects],
-          availableTags: Array.from(new Set([...state.availableTags, ...newSnippet.databaseTags]))
-        }));
+        set(state => {
+          const nextAvailableTags = Array.from(new Set([...state.availableTags, ...newSnippet.databaseTags]));
+          return {
+            projects: [newSnippet, ...state.projects],
+            availableTags: nextAvailableTags,
+            databases: syncDatabasesWithTags(nextAvailableTags, state.databases),
+          };
+        });
 
         get().updateNodeData(nodeId, { savedToLibrary: true });
       },
@@ -2127,6 +2325,7 @@ export const useStore = create<StoreState>()(
                     copilotThreads: newProject.copilotThreads,
                     activeCopilotThreadId: newProject.activeCopilotThreadId,
                     availableTags: updatedAvailableTags,
+                    databases: syncDatabasesWithTags(updatedAvailableTags, state.databases),
                     currentView: 'editor',
                     activeGraphFilters: Array.from(sources)
                 };
@@ -2150,6 +2349,7 @@ export const useStore = create<StoreState>()(
           const { activeProjectId, projects, nodes, edges, activeProjectContent, addNode, updateGraphLayout, syncGraph } = get();
           const project = projects.find(p => p.id === activeProjectId);
           if (!project) return;
+          const includeWorkspaceKnowledgeBase = shouldIncludeWorkspaceKnowledgeBase(text);
 
           const appendMessageToActiveThread = (message: ChatMessage) => {
               set(state => {
@@ -2208,13 +2408,16 @@ export const useStore = create<StoreState>()(
                   context = buildProjectReadingContext(
                       { ...project, nodes, edges },
                       activeProjectContent,
-                      projects
+                      projects,
+                      { includeWorkspaceKnowledgeBase }
                   );
                   if (exposeGraphTools) {
                       toolsList = [addNodeTool, connectNodesTool, changeLayoutTool, syncGraphTool];
                   }
               } else {
-                  context = buildProjectReadingContext(project, activeProjectContent, projects);
+                  context = buildProjectReadingContext(project, activeProjectContent, projects, {
+                      includeWorkspaceKnowledgeBase
+                  });
               }
 
               const ai = getAIClient();
@@ -2303,6 +2506,7 @@ export const useStore = create<StoreState>()(
         const normalizedWorkspace = normalizeWorkspaceSnapshot({
           projects: typedPersistedState.projects,
           availableTags: typedPersistedState.availableTags,
+          databases: typedPersistedState.databases,
           theme: typedPersistedState.theme,
         });
 
@@ -2311,6 +2515,7 @@ export const useStore = create<StoreState>()(
           ...typedPersistedState,
           projects: normalizedWorkspace.projects,
           availableTags: normalizedWorkspace.availableTags,
+          databases: normalizedWorkspace.databases,
           theme: normalizedWorkspace.theme,
         };
       },
@@ -2318,6 +2523,7 @@ export const useStore = create<StoreState>()(
       partialize: (state) => ({
         projects: state.projects,
         availableTags: state.availableTags,
+        databases: state.databases,
         theme: state.theme,
         // Don't persist currentView or active IDs to force a clean dashboard start
       }),

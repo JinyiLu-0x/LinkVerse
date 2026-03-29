@@ -4,6 +4,7 @@ import { SUPABASE_MISSING_MESSAGE, isSupabaseConfigured, supabase } from './supa
 
 const AUTH_CURRENT_USER_KEY = 'linkverse-auth-current-user';
 const AUTH_META_KEY = 'linkverse-auth-meta';
+const AUTH_APPEARANCE_KEY = 'linkverse-auth-appearance';
 const WORKSPACE_OWNER_KEY = 'linkverse-workspace-owner';
 const DEFAULT_MODEL = 'gemini-2.5-flash';
 
@@ -17,6 +18,7 @@ export type SessionUser = {
   apiKey?: string;
   aiModel?: string;
   initials: string;
+  avatarUrl?: string;
 };
 
 type ProfileRow = {
@@ -30,6 +32,10 @@ type ProfileRow = {
   workspace: WorkspaceSnapshot | null;
   created_at: string | null;
   updated_at: string | null;
+};
+
+type StoredAppearance = {
+  avatarUrl?: string;
 };
 
 const readJsonStorage = <T>(key: string, fallback: T): T => {
@@ -68,6 +74,27 @@ const cacheHasAccounts = (hasAccounts: boolean) => {
   writeJsonStorage(AUTH_META_KEY, { hasAccounts });
 };
 
+const getAppearanceStore = () =>
+  readJsonStorage<Record<string, StoredAppearance>>(AUTH_APPEARANCE_KEY, {});
+
+const getStoredAppearanceForUser = (userId: string): StoredAppearance => {
+  return getAppearanceStore()[userId] || {};
+};
+
+const saveStoredAppearanceForUser = (userId: string, appearance: StoredAppearance) => {
+  const nextStore = getAppearanceStore();
+
+  if (appearance.avatarUrl?.trim()) {
+    nextStore[userId] = {
+      avatarUrl: appearance.avatarUrl.trim(),
+    };
+  } else {
+    delete nextStore[userId];
+  }
+
+  writeJsonStorage(AUTH_APPEARANCE_KEY, nextStore);
+};
+
 const clearSessionCache = () => {
   removeStorage(AUTH_CURRENT_USER_KEY);
 };
@@ -100,6 +127,18 @@ const normalizeErrorMessage = (message?: string) => {
   }
   if (lowered.includes('user already registered')) {
     return 'This email is already registered.';
+  }
+  if (lowered.includes('new email should be different from the old email')) {
+    return 'Use a different email address.';
+  }
+  if (lowered.includes('password should be at least') || lowered.includes('weak password')) {
+    return 'Password is too weak.';
+  }
+  if (lowered.includes('same password') || lowered.includes('different from the old password')) {
+    return 'Choose a different password.';
+  }
+  if (lowered.includes('reauthentication') || lowered.includes('secure password change')) {
+    return 'Please sign in again before changing your password.';
   }
   if (
     lowered.includes('relation "public.profiles" does not exist') ||
@@ -139,6 +178,7 @@ const mapProfileToSessionUser = (user: User, profile?: ProfileRow | null): Sessi
     : user.created_at
       ? new Date(user.created_at).getTime()
       : Date.now();
+  const appearance = getStoredAppearanceForUser(user.id);
 
   return {
     id: user.id,
@@ -150,6 +190,7 @@ const mapProfileToSessionUser = (user: User, profile?: ProfileRow | null): Sessi
     apiKey: profile?.api_key || '',
     aiModel: profile?.ai_model || DEFAULT_MODEL,
     initials: toInitials(displayName, email),
+    avatarUrl: appearance.avatarUrl || '',
   };
 };
 
@@ -159,12 +200,18 @@ const upsertProfile = async ({
   apiKey,
   aiModel,
   workspace,
+  email,
+  role,
+  plan,
 }: {
   user: User;
   displayName?: string;
   apiKey?: string;
   aiModel?: string;
   workspace?: WorkspaceSnapshot;
+  email?: string;
+  role?: string;
+  plan?: string;
 }) => {
   const ready = ensureSupabase();
   if (!ready.client) {
@@ -175,14 +222,14 @@ const upsertProfile = async ({
 
   const payload: Record<string, unknown> = {
     id: user.id,
-    email: user.email || '',
+    email: email?.trim() || user.email || '',
     display_name:
       displayName?.trim() ||
       (typeof user.user_metadata?.display_name === 'string' ? user.user_metadata.display_name : '') ||
       user.email?.split('@')[0] ||
       'Workspace member',
-    role: cachedUser?.id === user.id ? cachedUser.role : 'Member',
-    plan: cachedUser?.id === user.id ? cachedUser.plan : 'Cloud',
+    role: role || (cachedUser?.id === user.id ? cachedUser.role : 'Member'),
+    plan: plan || (cachedUser?.id === user.id ? cachedUser.plan : 'Cloud'),
     api_key: apiKey?.trim() ?? (cachedUser?.id === user.id ? cachedUser.apiKey || '' : ''),
     ai_model: aiModel?.trim() ?? (cachedUser?.id === user.id ? cachedUser.aiModel || DEFAULT_MODEL : DEFAULT_MODEL),
   };
@@ -225,8 +272,28 @@ const fetchProfile = async (user: User) => {
   }
 
   if (data) {
+    const authEmail = user.email || '';
+    const profileDisplayName = data.display_name?.trim() || '';
+    const authDisplayName =
+      typeof user.user_metadata?.display_name === 'string' ? user.user_metadata.display_name.trim() : '';
+
+    if (data.email === authEmail && profileDisplayName && (!authDisplayName || profileDisplayName === authDisplayName)) {
+      return {
+        profile: data as ProfileRow,
+      };
+    }
+
     return {
-      profile: data as ProfileRow,
+      ...(await upsertProfile({
+        user,
+        email: authEmail,
+        displayName: profileDisplayName || authDisplayName,
+        apiKey: data.api_key || '',
+        aiModel: data.ai_model || DEFAULT_MODEL,
+        workspace: data.workspace || undefined,
+        role: data.role || 'Member',
+        plan: data.plan || 'Cloud',
+      })),
     };
   }
 
@@ -411,6 +478,7 @@ export const updateCurrentUserProfile = async (updates: {
 
   const displayName = updates.displayName?.trim();
   if (!displayName) return null;
+  const currentUser = getCurrentUser();
 
   await ready.client.auth.updateUser({
     data: {
@@ -421,8 +489,11 @@ export const updateCurrentUserProfile = async (updates: {
   const profileResult = await upsertProfile({
     user: session.user,
     displayName,
-    apiKey: getCurrentUser()?.apiKey,
-    aiModel: getCurrentUser()?.aiModel,
+    email: currentUser?.email,
+    apiKey: currentUser?.apiKey,
+    aiModel: currentUser?.aiModel,
+    role: currentUser?.role,
+    plan: currentUser?.plan,
   });
 
   if (profileResult.error) {
@@ -432,6 +503,122 @@ export const updateCurrentUserProfile = async (updates: {
   const sessionUser = mapProfileToSessionUser(session.user, profileResult.profile);
   cacheCurrentUser(sessionUser);
   return sessionUser;
+};
+
+export const updateCurrentUserEmail = async (email: string) => {
+  const ready = ensureSupabase();
+  if (!ready.client) {
+    return { error: ready.error || SUPABASE_MISSING_MESSAGE };
+  }
+
+  const {
+    data: { session },
+  } = await ready.client.auth.getSession();
+
+  if (!session?.user) {
+    return { error: 'Not authenticated.' };
+  }
+
+  const normalizedEmail = normalizeEmail(email);
+  if (!normalizedEmail) {
+    return { error: 'Email is required.' };
+  }
+
+  const { data, error } = await ready.client.auth.updateUser({
+    email: normalizedEmail,
+  });
+
+  if (error) {
+    return { error: normalizeErrorMessage(error.message) };
+  }
+
+  const authUser = data.user || session.user;
+  const pendingEmail =
+    typeof (authUser as User & { new_email?: string }).new_email === 'string'
+      ? (authUser as User & { new_email?: string }).new_email?.trim() || ''
+      : '';
+
+  if (pendingEmail && pendingEmail !== authUser.email) {
+    return {
+      pendingEmail,
+    };
+  }
+
+  const currentUser = getCurrentUser();
+  const profileResult = await upsertProfile({
+    user: authUser,
+    displayName: currentUser?.displayName,
+    email: authUser.email || normalizedEmail,
+    apiKey: currentUser?.apiKey,
+    aiModel: currentUser?.aiModel,
+    role: currentUser?.role,
+    plan: currentUser?.plan,
+  });
+
+  if (profileResult.error) {
+    return { error: profileResult.error };
+  }
+
+  const sessionUser = mapProfileToSessionUser(authUser, profileResult.profile);
+  cacheCurrentUser(sessionUser);
+
+  return {
+    user: sessionUser,
+  };
+};
+
+export const updateCurrentUserPassword = async ({
+  currentPassword,
+  password,
+}: {
+  currentPassword?: string;
+  password: string;
+}) => {
+  const ready = ensureSupabase();
+  if (!ready.client) {
+    return { error: ready.error || SUPABASE_MISSING_MESSAGE };
+  }
+
+  const normalizedPassword = password.trim();
+  if (!normalizedPassword) {
+    return { error: 'New password is required.' };
+  }
+
+  const payload: {
+    password: string;
+    current_password?: string;
+  } = {
+    password: normalizedPassword,
+  };
+
+  if (currentPassword?.trim()) {
+    payload.current_password = currentPassword.trim();
+  }
+
+  const { error } = await ready.client.auth.updateUser(payload);
+
+  if (error) {
+    return { error: normalizeErrorMessage(error.message) };
+  }
+
+  return { success: true };
+};
+
+export const updateCurrentUserAvatar = (avatarUrl: string) => {
+  const currentUser = getCurrentUser();
+  if (!currentUser) return null;
+
+  saveStoredAppearanceForUser(currentUser.id, {
+    avatarUrl,
+  });
+
+  const updatedUser: SessionUser = {
+    ...currentUser,
+    avatarUrl: avatarUrl.trim(),
+  };
+
+  cacheCurrentUser(updatedUser);
+  return updatedUser;
 };
 
 export const getCurrentUserAISettings = () => {

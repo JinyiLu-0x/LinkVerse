@@ -4,9 +4,12 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
-  const resolvedApiKey = env.VITE_AI_API_KEY || env.GEMINI_API_KEY || env.API_KEY || '';
-  const resolvedModel = env.VITE_AI_MODEL || env.AI_MODEL || 'gemini-2.5-flash';
-  const apiProxyTarget = env.VITE_API_PROXY_TARGET || 'http://127.0.0.1:8787';
+  const resolvedApiKey =
+    process.env.VITE_AI_API_KEY || env.VITE_AI_API_KEY || process.env.GEMINI_API_KEY || env.GEMINI_API_KEY || process.env.API_KEY || env.API_KEY || '';
+  const resolvedModel =
+    process.env.VITE_AI_MODEL || env.VITE_AI_MODEL || process.env.AI_MODEL || env.AI_MODEL || 'gemini-2.5-flash';
+  const apiProxyTarget =
+    process.env.VITE_API_PROXY_TARGET || env.VITE_API_PROXY_TARGET || 'http://127.0.0.1:8787';
 
   return {
     server: {
