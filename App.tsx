@@ -40,6 +40,13 @@ import {
   updateCurrentUserProfile,
   type SessionUser,
 } from './auth';
+import {
+    getStoredLanguage,
+    getUIText,
+    localizeAuthMessage,
+    saveStoredLanguage,
+    type AppLanguage,
+} from './i18n';
 
 // --- Icons (Zinc/Gray styled) ---
 const IconFile = (props: React.SVGProps<SVGSVGElement>) => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>;
@@ -190,6 +197,51 @@ const AuthField = ({
         {helper && <p className="mt-2 text-xs text-zinc-400">{helper}</p>}
     </div>
 );
+
+const LanguageToggle = ({
+    language,
+    onChange,
+    label,
+    hint,
+}: {
+    language: AppLanguage,
+    onChange: (language: AppLanguage) => void,
+    label?: string,
+    hint?: string,
+}) => {
+    const copy = getUIText(language);
+
+    return (
+        <div className="space-y-2">
+            {label && <div className="text-sm font-medium text-zinc-800 dark:text-zinc-100">{label}</div>}
+            <div className="inline-flex rounded-2xl border border-zinc-200 bg-zinc-50 p-1 dark:border-zinc-800 dark:bg-zinc-900">
+                <button
+                    type="button"
+                    onClick={() => onChange('en')}
+                    className={`px-3 py-2 rounded-xl text-sm font-medium transition-colors ${
+                        language === 'en'
+                            ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-950 dark:text-zinc-100'
+                            : 'text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100'
+                    }`}
+                >
+                    {copy.language.english}
+                </button>
+                <button
+                    type="button"
+                    onClick={() => onChange('zh-CN')}
+                    className={`px-3 py-2 rounded-xl text-sm font-medium transition-colors ${
+                        language === 'zh-CN'
+                            ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-950 dark:text-zinc-100'
+                            : 'text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100'
+                    }`}
+                >
+                    {copy.language.chinese}
+                </button>
+            </div>
+            {hint && <p className="text-xs text-zinc-400">{hint}</p>}
+        </div>
+    );
+};
 
 const markdownTokenPattern =
     /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)|`([^`]+)`|\*\*([^*]+)\*\*|\*([^*]+)\*/g;
@@ -399,11 +451,16 @@ const AuthView = ({
     onAuthenticated,
     hasAccounts,
     onHasAccountsChange,
+    language,
+    onLanguageChange,
 }: {
     onAuthenticated: (user: SessionUser) => void,
     hasAccounts: boolean,
     onHasAccountsChange: (hasAccounts: boolean) => void,
+    language: AppLanguage,
+    onLanguageChange: (language: AppLanguage) => void,
 }) => {
+    const copy = getUIText(language);
     const [mode, setMode] = useState<'login' | 'register'>('login');
     const [displayName, setDisplayName] = useState('');
     const [email, setEmail] = useState('');
@@ -422,7 +479,7 @@ const AuthView = ({
         try {
             if (mode === 'register') {
                 if (password !== confirmPassword) {
-                    setErrorMessage('Passwords do not match.');
+                    setErrorMessage(copy.auth.passwordMismatch);
                     return;
                 }
 
@@ -436,7 +493,7 @@ const AuthView = ({
                 });
 
                 if (result.error || !result.user) {
-                    setErrorMessage(result.error || 'Could not create account.');
+                    setErrorMessage(localizeAuthMessage(result.error || copy.auth.createAccountError, language));
                     return;
                 }
 
@@ -447,7 +504,7 @@ const AuthView = ({
 
             const result = await loginLocalAccount({ email, password });
             if (result.error || !result.user) {
-                setErrorMessage(result.error || 'Could not sign in.');
+                setErrorMessage(localizeAuthMessage(result.error || copy.auth.signInError, language));
                 return;
             }
 
@@ -475,10 +532,15 @@ const AuthView = ({
                 <div className="w-full max-w-xl">
                     <div className="rounded-[28px] border border-zinc-200 dark:border-zinc-800 bg-white/92 dark:bg-zinc-900/92 backdrop-blur-xl shadow-[0_24px_80px_rgba(15,23,42,0.08)] p-6 sm:p-8">
                         <div className="mb-7 flex items-center gap-3">
-                            <div className="w-9 h-9 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 flex items-center justify-center shadow-sm">
-                                <BrandLogo className="w-5 h-5" />
+                            <div className="flex items-center gap-3">
+                                <div className="w-9 h-9 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 flex items-center justify-center shadow-sm">
+                                    <BrandLogo className="w-5 h-5" />
+                                </div>
+                                <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">LinkVerse</div>
                             </div>
-                            <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">LinkVerse</div>
+                            <div className="ml-auto">
+                                <LanguageToggle language={language} onChange={onLanguageChange} />
+                            </div>
                         </div>
 
                         <div className="flex gap-2 mb-8 bg-zinc-100 dark:bg-zinc-800 p-1 rounded-2xl">
@@ -487,23 +549,23 @@ const AuthView = ({
                                 disabled={isSubmitting}
                                 className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors ${mode === 'login' ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-sm' : 'text-zinc-500 dark:text-zinc-400'}`}
                             >
-                                Log in
+                                {copy.auth.login}
                             </button>
                             <button
                                 onClick={() => setMode('register')}
                                 disabled={isSubmitting}
                                 className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors ${mode === 'register' ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-sm' : 'text-zinc-500 dark:text-zinc-400'}`}
                             >
-                                Create account
+                                {copy.auth.register}
                             </button>
                         </div>
 
                         <div className="mb-8">
-                            <div className="text-[11px] uppercase tracking-[0.24em] text-zinc-400 mb-3">Step by step</div>
+                            <div className="text-[11px] uppercase tracking-[0.24em] text-zinc-400 mb-3">{copy.auth.stepByStep}</div>
                             <h1 className="text-3xl sm:text-[2rem] leading-tight font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
                                 <AuthLoopingTitle
                                     key={`auth-title-${mode}`}
-                                    text={mode === 'login' ? 'Welcome back.' : 'Create your workspace account.'}
+                                    text={mode === 'login' ? copy.auth.welcomeBack : copy.auth.createAccountTitle}
                                     animate={!hasStartedForm}
                                 />
                             </h1>
@@ -519,14 +581,14 @@ const AuthView = ({
                             {mode === 'register' && (
                                 <AuthField
                                     step="01"
-                                    prompt="What should we call this account"
+                                    prompt={copy.auth.displayNamePrompt}
                                     active={!displayName.trim()}
                                 >
                                     <input
                                         className="w-full px-3 py-3 border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 rounded-xl text-sm"
                                         value={displayName}
                                         onChange={(e) => setDisplayName(e.target.value)}
-                                        placeholder="Display name"
+                                        placeholder={copy.auth.displayNamePlaceholder}
                                         disabled={isSubmitting}
                                     />
                                 </AuthField>
@@ -535,7 +597,7 @@ const AuthView = ({
                             {showEmailStep && (
                                 <AuthField
                                     step={mode === 'login' ? '01' : '02'}
-                                    prompt="Type the email"
+                                    prompt={copy.auth.emailPrompt}
                                     active={Boolean((mode === 'login' ? !email.trim() : displayName.trim() && !email.trim()))}
                                 >
                                     <input
@@ -543,7 +605,7 @@ const AuthView = ({
                                         className="w-full px-3 py-3 border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 rounded-xl text-sm"
                                         value={email}
                                         onChange={(e) => setEmail(e.target.value)}
-                                        placeholder="name@example.com"
+                                        placeholder={copy.auth.emailPlaceholder}
                                         autoComplete="email"
                                         disabled={isSubmitting}
                                     />
@@ -553,16 +615,16 @@ const AuthView = ({
                             {showPasswordStep && (
                                 <AuthField
                                     step={mode === 'login' ? '02' : '03'}
-                                    prompt="Choose the password"
+                                    prompt={copy.auth.passwordPrompt}
                                     active={Boolean(email.trim() && !password.trim())}
-                                    helper="Use 6 characters or more."
+                                    helper={copy.auth.passwordHelper}
                                 >
                                     <input
                                         type="password"
                                         className="w-full px-3 py-3 border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 rounded-xl text-sm"
                                         value={password}
                                         onChange={(e) => setPassword(e.target.value)}
-                                        placeholder="Password"
+                                        placeholder={copy.auth.passwordPlaceholder}
                                         autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
                                         disabled={isSubmitting}
                                     />
@@ -572,7 +634,7 @@ const AuthView = ({
                             {showConfirmStep && (
                                 <AuthField
                                     step="04"
-                                    prompt="Confirm the password"
+                                    prompt={copy.auth.confirmPasswordPrompt}
                                     active={Boolean(password.trim() && !confirmPassword.trim())}
                                 >
                                     <input
@@ -580,7 +642,7 @@ const AuthView = ({
                                         className="w-full px-3 py-3 border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 rounded-xl text-sm"
                                         value={confirmPassword}
                                         onChange={(e) => setConfirmPassword(e.target.value)}
-                                        placeholder="Repeat password"
+                                        placeholder={copy.auth.confirmPasswordPlaceholder}
                                         autoComplete="new-password"
                                         disabled={isSubmitting}
                                     />
@@ -590,9 +652,9 @@ const AuthView = ({
                             {showApiStep && (
                                 <AuthField
                                     step="05"
-                                    prompt="Optional: store your AI key now"
+                                    prompt={copy.auth.apiPrompt}
                                     active={!apiKey.trim()}
-                                    helper="You can also skip this and fill it later in Settings."
+                                    helper={copy.auth.apiHelper}
                                 >
                                     <div className="space-y-3">
                                         <input
@@ -600,14 +662,14 @@ const AuthView = ({
                                             className="w-full px-3 py-3 border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 rounded-xl text-sm"
                                             value={apiKey}
                                             onChange={(e) => setApiKey(e.target.value)}
-                                            placeholder="AI API key"
+                                            placeholder={copy.auth.apiKeyPlaceholder}
                                             disabled={isSubmitting}
                                         />
                                         <input
                                             className="w-full px-3 py-3 border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 rounded-xl text-sm"
                                             value={model}
                                             onChange={(e) => setModel(e.target.value)}
-                                            placeholder={AI_CONFIG.defaultModel}
+                                            placeholder={copy.auth.modelPlaceholder}
                                             disabled={isSubmitting}
                                         />
                                     </div>
@@ -619,7 +681,7 @@ const AuthView = ({
                                 disabled={isSubmitting}
                                 className="w-full mt-2 py-3 rounded-2xl bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 text-sm font-medium hover:bg-zinc-800 dark:hover:bg-zinc-200 transition-colors shadow-sm"
                             >
-                                {isSubmitting ? 'Please wait...' : mode === 'login' ? 'Continue' : 'Create account'}
+                                {isSubmitting ? copy.auth.pleaseWait : mode === 'login' ? copy.auth.continue : copy.auth.createAccountButton}
                             </button>
                         </form>
                     </div>
@@ -1382,19 +1444,21 @@ const FriendsView = ({ mode }: { mode: 'friends' | 'team' }) => {
     );
 };
 
-const NoteToolbar = ({ onInsert }: { onInsert: (before: string, after: string) => void }) => {
+const NoteToolbar = ({ onInsert, language }: { onInsert: (before: string, after: string) => void, language: AppLanguage }) => {
+    const copy = getUIText(language);
     return (
         <div className="flex items-center gap-1 mb-4 p-1 bg-zinc-100 dark:bg-zinc-800 rounded-lg w-fit">
-            <button onClick={() => onInsert('**', '**')} className="p-1.5 hover:bg-white dark:hover:bg-zinc-700 rounded text-zinc-600 dark:text-zinc-300 text-xs font-bold" title="Bold">B</button>
-            <button onClick={() => onInsert('*', '*')} className="p-1.5 hover:bg-white dark:hover:bg-zinc-700 rounded text-zinc-600 dark:text-zinc-300 text-xs italic" title="Italic">I</button>
-            <button onClick={() => onInsert('==', '==')} className="p-1.5 hover:bg-white dark:hover:bg-zinc-700 rounded text-zinc-600 dark:text-zinc-300 text-xs bg-yellow-100 dark:bg-yellow-900/30" title="Highlight">H</button>
+            <button onClick={() => onInsert('**', '**')} className="p-1.5 hover:bg-white dark:hover:bg-zinc-700 rounded text-zinc-600 dark:text-zinc-300 text-xs font-bold" title={copy.note.bold}>B</button>
+            <button onClick={() => onInsert('*', '*')} className="p-1.5 hover:bg-white dark:hover:bg-zinc-700 rounded text-zinc-600 dark:text-zinc-300 text-xs italic" title={copy.note.italic}>I</button>
+            <button onClick={() => onInsert('==', '==')} className="p-1.5 hover:bg-white dark:hover:bg-zinc-700 rounded text-zinc-600 dark:text-zinc-300 text-xs bg-yellow-100 dark:bg-yellow-900/30" title={copy.note.highlight}>H</button>
             <div className="w-px h-4 bg-zinc-300 dark:bg-zinc-600 mx-1"></div>
-            <button onClick={() => onInsert('![Image](', ')')} className="p-1.5 hover:bg-white dark:hover:bg-zinc-700 rounded text-zinc-600 dark:text-zinc-300" title="Image"><IconImage className="w-3.5 h-3.5"/></button>
+            <button onClick={() => onInsert('![Image](', ')')} className="p-1.5 hover:bg-white dark:hover:bg-zinc-700 rounded text-zinc-600 dark:text-zinc-300" title={copy.note.image}><IconImage className="w-3.5 h-3.5"/></button>
         </div>
     );
 };
 
-const NoteEditor = () => {
+const NoteEditor = ({ language }: { language: AppLanguage }) => {
+    const copy = getUIText(language);
     const content = useStore(s => s.activeProjectContent);
     const updateContent = useStore(s => s.updateNoteContent);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -1402,14 +1466,27 @@ const NoteEditor = () => {
     return (
         <div className="h-full w-full bg-zinc-100 dark:bg-zinc-950 p-8 overflow-y-auto flex justify-center">
             <div className="max-w-3xl w-full min-h-[90vh] bg-white dark:bg-zinc-900 shadow-sm border border-zinc-200 dark:border-zinc-800 rounded-xl p-12 flex flex-col">
-                <NoteToolbar onInsert={handleInsert} />
-                <textarea ref={textareaRef} className="w-full flex-1 resize-none outline-none text-zinc-800 dark:text-zinc-200 text-lg leading-relaxed font-serif bg-transparent placeholder:text-zinc-300" placeholder="Start typing..." value={content} onChange={e => updateContent(e.target.value)} />
+                <NoteToolbar onInsert={handleInsert} language={language} />
+                <textarea ref={textareaRef} className="w-full flex-1 resize-none outline-none text-zinc-800 dark:text-zinc-200 text-lg leading-relaxed font-serif bg-transparent placeholder:text-zinc-300" placeholder={copy.note.startTyping} value={content} onChange={e => updateContent(e.target.value)} />
             </div>
         </div>
     );
 };
 
-const SettingsView = ({ currentUser, onUserChange, onLogout }: { currentUser: SessionUser, onUserChange: (user: SessionUser) => void, onLogout: () => void }) => {
+const SettingsView = ({
+    currentUser,
+    onUserChange,
+    onLogout,
+    language,
+    onLanguageChange,
+}: {
+    currentUser: SessionUser,
+    onUserChange: (user: SessionUser) => void,
+    onLogout: () => void,
+    language: AppLanguage,
+    onLanguageChange: (language: AppLanguage) => void,
+}) => {
+    const copy = getUIText(language);
     const [displayName, setDisplayName] = useState(currentUser.displayName);
     const [apiKey, setApiKey] = useState('');
     const [model, setModel] = useState(AI_CONFIG.defaultModel);
@@ -1432,12 +1509,12 @@ const SettingsView = ({ currentUser, onUserChange, onLogout }: { currentUser: Se
     const handleProfileSave = async () => {
         const updatedUser = await updateCurrentUserProfile({ displayName });
         if (!updatedUser) {
-            setStatusMessage('Could not update profile.');
+            setStatusMessage(copy.settings.profileUpdateFailed);
             return;
         }
 
         onUserChange(updatedUser);
-        setStatusMessage('Profile updated.');
+        setStatusMessage(copy.settings.profileUpdated);
     };
 
     const handleSave = async () => {
@@ -1446,7 +1523,7 @@ const SettingsView = ({ currentUser, onUserChange, onLogout }: { currentUser: Se
             onUserChange(updatedUser);
         }
         refreshResolvedConfig();
-        setStatusMessage('AI settings saved for this account.');
+        setStatusMessage(copy.settings.aiSettingsSaved);
     };
 
     const handleClear = async () => {
@@ -1455,7 +1532,7 @@ const SettingsView = ({ currentUser, onUserChange, onLogout }: { currentUser: Se
             onUserChange(updatedUser);
         }
         refreshResolvedConfig();
-        setStatusMessage('Account API override cleared. Falling back to deployment config.');
+        setStatusMessage(copy.settings.aiOverrideCleared);
     };
 
     useEffect(() => {
@@ -1466,28 +1543,40 @@ const SettingsView = ({ currentUser, onUserChange, onLogout }: { currentUser: Se
 
     const sourceLabel =
         resolvedConfig.source === 'browser'
-            ? 'Using account override'
+            ? copy.settings.usingAccountOverride
             : resolvedConfig.source === 'environment'
-                ? 'Using deployment environment variable'
-                : 'Not configured yet';
+                ? copy.settings.usingEnvironment
+                : copy.settings.notConfigured;
 
     return (
         <div className="max-w-5xl mx-auto p-8 h-full overflow-y-auto bg-white dark:bg-zinc-950">
-            <h2 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100 mb-2">Settings</h2>
+            <h2 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100 mb-2">{copy.settings.title}</h2>
             <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-8">
-                Manage local AI access for this browser without editing source files.
+                {copy.settings.subtitle}
             </p>
+
+            <div className="mb-6 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-950/40 p-5">
+                <LanguageToggle
+                    language={language}
+                    onChange={onLanguageChange}
+                    label={copy.language.label}
+                    hint={copy.language.hint}
+                />
+            </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
                 <div className="space-y-1">
                     <button className="w-full text-left px-3 py-2 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 font-medium rounded-lg text-sm">
-                        AI Access
+                        {copy.settings.aiAccess}
                     </button>
                     <button className="w-full text-left px-3 py-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium rounded-lg text-sm">
-                        Profile
+                        {copy.settings.profile}
                     </button>
                     <button className="w-full text-left px-3 py-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium rounded-lg text-sm">
-                        Appearance
+                        {copy.settings.appearance}
+                    </button>
+                    <button className="w-full text-left px-3 py-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium rounded-lg text-sm">
+                        {copy.settings.language}
                     </button>
                 </div>
 
@@ -1495,9 +1584,9 @@ const SettingsView = ({ currentUser, onUserChange, onLogout }: { currentUser: Se
                     <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-8">
                         <div className="flex items-start justify-between gap-6 mb-8">
                             <div>
-                                <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">AI Access Setup</h3>
+                                <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">{copy.settings.aiAccessSetup}</h3>
                                 <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">
-                                    Your key is stored with this local test account. Deployment environment variables still work as fallback.
+                                    {copy.settings.aiAccessHint}
                                 </p>
                             </div>
                             <div className={`px-3 py-1 rounded-full text-xs font-medium ${
@@ -1514,11 +1603,11 @@ const SettingsView = ({ currentUser, onUserChange, onLogout }: { currentUser: Se
                         <div className="space-y-6">
                             <div className="grid md:grid-cols-[1.2fr_0.8fr] gap-6">
                                 <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 p-5 bg-zinc-50/70 dark:bg-zinc-950/40">
-                                    <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 mb-4">Account</div>
+                                    <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 mb-4">{copy.settings.account}</div>
                                     <div className="space-y-4">
                                         <div>
                                             <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-                                                Display Name
+                                                {copy.settings.displayName}
                                             </label>
                                             <input
                                                 className="w-full px-3 py-2 border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 rounded-lg text-sm"
@@ -1527,7 +1616,7 @@ const SettingsView = ({ currentUser, onUserChange, onLogout }: { currentUser: Se
                                             />
                                         </div>
                                         <div>
-                                            <div className="text-xs text-zinc-400 mb-1">Email</div>
+                                            <div className="text-xs text-zinc-400 mb-1">{copy.settings.email}</div>
                                             <div className="text-sm text-zinc-700 dark:text-zinc-200">{currentUser.email}</div>
                                         </div>
                                         <div className="flex flex-wrap gap-2">
@@ -1539,20 +1628,20 @@ const SettingsView = ({ currentUser, onUserChange, onLogout }: { currentUser: Se
                                                 onClick={handleProfileSave}
                                                 className="px-4 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm font-medium text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-800"
                                             >
-                                                Save Profile
+                                                {copy.settings.saveProfile}
                                             </button>
                                             <button
                                                 onClick={onLogout}
                                                 className="px-4 py-2 border border-red-200 dark:border-red-900/40 rounded-lg text-sm font-medium text-red-600 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2"
                                             >
-                                                <IconLogOut className="w-4 h-4" /> Sign Out
+                                                <IconLogOut className="w-4 h-4" /> {copy.settings.signOut}
                                             </button>
                                         </div>
                                     </div>
                                 </div>
 
                                 <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 p-5 bg-zinc-50/70 dark:bg-zinc-950/40">
-                                    <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 mb-4">Current User</div>
+                                    <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 mb-4">{copy.settings.currentUser}</div>
                                     <div className="flex items-center gap-4">
                                         <div className="w-14 h-14 rounded-2xl bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 flex items-center justify-center font-semibold">
                                             {currentUser.initials}
@@ -1563,20 +1652,20 @@ const SettingsView = ({ currentUser, onUserChange, onLogout }: { currentUser: Se
                                         </div>
                                     </div>
                                     <p className="text-xs text-zinc-400 mt-4 leading-5">
-                                        API settings below are attached to this local account, so your test users can hold different keys later.
+                                        {copy.settings.localAccountHint}
                                     </p>
                                 </div>
                             </div>
 
                             <div>
                                 <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-                                    API Key
+                                    {copy.settings.apiKey}
                                 </label>
                                 <div className="flex gap-2">
                                     <input
                                         type={showKey ? 'text' : 'password'}
                                         className="w-full px-3 py-2 border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 rounded-lg text-sm"
-                                        placeholder="Paste your AI API key"
+                                        placeholder={copy.settings.apiKeyPlaceholder}
                                         value={apiKey}
                                         onChange={(e) => setApiKey(e.target.value)}
                                         spellCheck={false}
@@ -1585,17 +1674,17 @@ const SettingsView = ({ currentUser, onUserChange, onLogout }: { currentUser: Se
                                         onClick={() => setShowKey((value) => !value)}
                                         className="px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 text-sm text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800"
                                     >
-                                        {showKey ? 'Hide' : 'Show'}
+                                        {showKey ? copy.settings.hide : copy.settings.show}
                                     </button>
                                 </div>
                                 <p className="text-xs text-zinc-400 mt-2">
-                                    Leave this empty if you want to keep using the deployment-provided key.
+                                    {copy.settings.apiKeyHint}
                                 </p>
                             </div>
 
                             <div>
                                 <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-                                    Model
+                                    {copy.settings.model}
                                 </label>
                                 <input
                                     className="w-full max-w-md px-3 py-2 border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 rounded-lg text-sm"
@@ -1605,7 +1694,7 @@ const SettingsView = ({ currentUser, onUserChange, onLogout }: { currentUser: Se
                                     spellCheck={false}
                                 />
                                 <p className="text-xs text-zinc-400 mt-2">
-                                    Default is `{AI_CONFIG.defaultModel}`.
+                                    {copy.settings.modelHintPrefix} `{AI_CONFIG.defaultModel}`.
                                 </p>
                             </div>
 
@@ -1614,13 +1703,13 @@ const SettingsView = ({ currentUser, onUserChange, onLogout }: { currentUser: Se
                                     onClick={handleSave}
                                     className="px-4 py-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-lg text-sm font-medium hover:bg-zinc-800 dark:hover:bg-zinc-200"
                                 >
-                                    Save AI Settings
+                                    {copy.settings.saveAISettings}
                                 </button>
                                 <button
                                     onClick={handleClear}
                                     className="px-4 py-2 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800"
                                 >
-                                    Clear Browser Override
+                                    {copy.settings.clearBrowserOverride}
                                 </button>
                                 {statusMessage && (
                                     <span className="text-sm text-emerald-600 dark:text-emerald-400">{statusMessage}</span>
@@ -1630,24 +1719,24 @@ const SettingsView = ({ currentUser, onUserChange, onLogout }: { currentUser: Se
                     </div>
 
                     <div className="bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 rounded-xl p-6">
-                        <h4 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 mb-3">Current Runtime</h4>
+                        <h4 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 mb-3">{copy.settings.currentRuntime}</h4>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                             <div>
-                                <div className="text-zinc-400 mb-1">Engine</div>
+                                <div className="text-zinc-400 mb-1">{copy.settings.engine}</div>
                                 <div className="text-zinc-700 dark:text-zinc-200">{resolvedConfig.providerLabel}</div>
                             </div>
                             <div>
-                                <div className="text-zinc-400 mb-1">Model</div>
+                                <div className="text-zinc-400 mb-1">{copy.settings.model}</div>
                                 <div className="text-zinc-700 dark:text-zinc-200">{resolvedConfig.model}</div>
                             </div>
                             <div>
-                                <div className="text-zinc-400 mb-1">Key Source</div>
+                                <div className="text-zinc-400 mb-1">{copy.settings.keySource}</div>
                                 <div className="text-zinc-700 dark:text-zinc-200">{sourceLabel}</div>
                             </div>
                             <div>
-                                <div className="text-zinc-400 mb-1">Status</div>
+                                <div className="text-zinc-400 mb-1">{copy.settings.status}</div>
                                 <div className="text-zinc-700 dark:text-zinc-200">
-                                    {resolvedConfig.source === 'placeholder' ? 'Missing API key' : 'Ready'}
+                                    {resolvedConfig.source === 'placeholder' ? copy.settings.missingApiKey : copy.settings.ready}
                                 </div>
                             </div>
                         </div>
@@ -2064,7 +2153,7 @@ const GraphLayersPanel = ({ isOpen, onToggle }: { isOpen: boolean, onToggle: () 
 
 // --- Editor Logic Refactored to Fix Provider Issue ---
 
-const FlowEditor = ({ activeProject, theme, nodeTypes, onRename }: any) => { // Added onRename prop
+const FlowEditor = ({ activeProject, theme, nodeTypes, onRename, language }: any) => { // Added onRename prop
     const { 
         nodes, edges, onNodesChange, onEdgesChange, onConnect,
         onNodesDelete, onEdgesDelete,
@@ -2243,7 +2332,7 @@ const FlowEditor = ({ activeProject, theme, nodeTypes, onRename }: any) => { // 
                              {editingEdge && <EdgeLabelModal edge={editingEdge} onClose={() => setEditingEdge(null)} />}
                          </div>
                     )}
-                    {activeProject.type === 'note' && <NoteEditor />}
+                    {activeProject.type === 'note' && <NoteEditor language={language} />}
                     {activeProject.type === 'resource' && <ResourceViewer project={activeProject} />}
                 </div>
             </div>
@@ -2255,6 +2344,8 @@ const FlowEditor = ({ activeProject, theme, nodeTypes, onRename }: any) => { // 
 // --- Main App ---
 
 export default function App() {
+  const [language, setLanguage] = useState<AppLanguage>(() => getStoredLanguage());
+  const copy = getUIText(language);
   const { 
     activeProjectId, isSidebarCollapsed, toggleSidebar,
     currentView, setView, projects, availableTags, saveProject, theme, toggleTheme,
@@ -2282,6 +2373,10 @@ export default function App() {
     () => JSON.stringify(workspaceSnapshot),
     [workspaceSnapshot]
   );
+
+  useEffect(() => {
+    saveStoredLanguage(language);
+  }, [language]);
 
   // Sync Theme with DOM
   useEffect(() => {
@@ -2336,7 +2431,7 @@ export default function App() {
           getWorkspaceSnapshotFromState(useStore.getState())
         );
         lastSavedWorkspaceRef.current = JSON.stringify(localSnapshot);
-        setToastMessage('Cloud sync is temporarily unavailable. Your local workspace is still here.');
+        setToastMessage(copy.shell.cloudSyncUnavailable);
         setIsWorkspaceReady(true);
         return;
       }
@@ -2369,7 +2464,7 @@ export default function App() {
       setCachedWorkspaceOwnerId(currentUser.id);
 
       if (savedWorkspaceResult.error) {
-        setToastMessage('Cloud sync could not seed this account yet. The starter workspace is ready locally.');
+        setToastMessage(copy.shell.cloudSeedFailed);
       }
 
       setIsWorkspaceReady(true);
@@ -2380,7 +2475,7 @@ export default function App() {
     return () => {
       isCancelled = true;
     };
-  }, [currentUser, isAuthReady, replaceWorkspace]);
+  }, [copy.shell.cloudSeedFailed, copy.shell.cloudSyncUnavailable, currentUser, isAuthReady, replaceWorkspace]);
 
   useEffect(() => {
     if (!currentUser || !isWorkspaceReady) {
@@ -2402,7 +2497,7 @@ export default function App() {
     workspaceSaveTimerRef.current = window.setTimeout(async () => {
       const result = await saveWorkspaceSnapshot(workspaceSnapshot);
       if (!result.workspace) {
-        setToastMessage('Cloud sync failed. Changes still remain in this browser.');
+        setToastMessage(copy.shell.cloudSaveFailed);
         return;
       }
 
@@ -2417,7 +2512,7 @@ export default function App() {
         workspaceSaveTimerRef.current = null;
       }
     };
-  }, [currentUser, isWorkspaceReady, workspaceSignature, workspaceSnapshot]);
+  }, [copy.shell.cloudSaveFailed, currentUser, isWorkspaceReady, workspaceSignature, workspaceSnapshot]);
 
   // Global Keydown for Ctrl+S
   useEffect(() => {
@@ -2426,13 +2521,13 @@ export default function App() {
             e.preventDefault();
             if (activeProjectId) {
                 saveProject();
-                setToastMessage('Project saved successfully');
+                setToastMessage(copy.shell.projectSaved);
             }
         }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeProjectId, saveProject]);
+  }, [activeProjectId, copy.shell.projectSaved, saveProject]);
 
   const nodeTypes = useMemo(() => ({ mindMapNode: MindNode }), []);
 
@@ -2456,7 +2551,7 @@ export default function App() {
   };
 
   const handleLogoutClick = () => {
-      const shouldLogout = window.confirm('Sign out of this account now?');
+      const shouldLogout = window.confirm(copy.shell.signOutConfirm);
       if (!shouldLogout) return;
       void handleLogout();
   };
@@ -2472,14 +2567,14 @@ export default function App() {
         <div className="h-screen w-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-950 text-zinc-500">
           <div className="flex items-center gap-3 text-sm">
             <div className="w-4 h-4 border-2 border-zinc-300 border-t-zinc-900 dark:border-zinc-700 dark:border-t-zinc-100 rounded-full animate-spin"></div>
-            Loading workspace...
+            {copy.shell.loadingWorkspace}
           </div>
         </div>
       );
   }
 
   if (!currentUser) {
-      return <AuthView onAuthenticated={handleAuthSuccess} hasAccounts={hasAccounts} onHasAccountsChange={setHasAccounts} />;
+      return <AuthView onAuthenticated={handleAuthSuccess} hasAccounts={hasAccounts} onHasAccountsChange={setHasAccounts} language={language} onLanguageChange={setLanguage} />;
   }
 
   const renderContent = () => {
@@ -2489,7 +2584,7 @@ export default function App() {
       case 'library':
         return <LibraryView onRename={(p: any) => setProjectToRename(p)} onDelete={handleDelete} onShare={(p: any) => setProjectToShare(p)} onShareDatabase={(db: string) => setDatabaseToShare(db)} />;
       case 'editor':
-        if (!activeProject) return <div className="flex items-center justify-center h-full text-zinc-400">Select a project</div>;
+        if (!activeProject) return <div className="flex items-center justify-center h-full text-zinc-400">{copy.shell.selectProject}</div>;
         // WRAP Editor in ReactFlowProvider to fix hook errors
         return (
             <ReactFlowProvider key={activeProject.id}>
@@ -2497,15 +2592,16 @@ export default function App() {
                     activeProject={activeProject} 
                     theme={theme} 
                     nodeTypes={nodeTypes} 
-                    onRename={(p: any) => setProjectToRename(p)} 
+                    onRename={(p: any) => setProjectToRename(p)}
+                    language={language}
                 />
             </ReactFlowProvider>
         );
       case 'boards': return <GeneratorView />;
       case 'friends': return <FriendsView mode="friends" />;
       case 'team': return <FriendsView mode="team" />;
-      case 'settings': return <SettingsView currentUser={currentUser} onUserChange={setCurrentUser} onLogout={handleLogout} />;
-      default: return <div className="flex items-center justify-center h-full text-zinc-400">Work in progress...</div>;
+      case 'settings': return <SettingsView currentUser={currentUser} onUserChange={setCurrentUser} onLogout={handleLogout} language={language} onLanguageChange={setLanguage} />;
+      default: return <div className="flex items-center justify-center h-full text-zinc-400">{copy.shell.workInProgress}</div>;
     }
   };
 
@@ -2519,23 +2615,23 @@ export default function App() {
         </div>
         <nav className="flex-1 py-6 px-3 space-y-6 overflow-y-auto">
           <div>
-              {!isSidebarCollapsed && <div className="px-3 mb-2 text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Workspace</div>}
+              {!isSidebarCollapsed && <div className="px-3 mb-2 text-[10px] font-bold text-zinc-400 uppercase tracking-widest">{copy.shell.workspaceSection}</div>}
               <div className="space-y-1">
-                  <button onClick={() => setView('dashboard')} className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all ${currentView === 'dashboard' ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100' : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 hover:text-zinc-900 dark:hover:text-zinc-100'}`}><IconHome />{!isSidebarCollapsed && <span>Workspace</span>}</button>
-                  <button onClick={() => setView('boards')} className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all ${currentView === 'boards' ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100' : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 hover:text-zinc-900 dark:hover:text-zinc-100'}`}><IconGraph />{!isSidebarCollapsed && <span>Generator</span>}</button>
+                  <button onClick={() => setView('dashboard')} className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all ${currentView === 'dashboard' ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100' : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 hover:text-zinc-900 dark:hover:text-zinc-100'}`}><IconHome />{!isSidebarCollapsed && <span>{copy.shell.workspace}</span>}</button>
+                  <button onClick={() => setView('boards')} className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all ${currentView === 'boards' ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100' : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 hover:text-zinc-900 dark:hover:text-zinc-100'}`}><IconGraph />{!isSidebarCollapsed && <span>{copy.shell.generator}</span>}</button>
               </div>
           </div>
           <div>
-              {!isSidebarCollapsed && <div className="px-3 mb-2 text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Knowledge</div>}
+              {!isSidebarCollapsed && <div className="px-3 mb-2 text-[10px] font-bold text-zinc-400 uppercase tracking-widest">{copy.shell.knowledge}</div>}
               <div className="space-y-1">
-                  <button onClick={() => setView('library')} className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all ${currentView === 'library' ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100' : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 hover:text-zinc-900 dark:hover:text-zinc-100'}`}><IconDatabase />{!isSidebarCollapsed && <span>Library</span>}</button>
+                  <button onClick={() => setView('library')} className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all ${currentView === 'library' ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100' : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 hover:text-zinc-900 dark:hover:text-zinc-100'}`}><IconDatabase />{!isSidebarCollapsed && <span>{copy.shell.library}</span>}</button>
               </div>
           </div>
           <div>
-              {!isSidebarCollapsed && <div className="px-3 mb-2 text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Social</div>}
+              {!isSidebarCollapsed && <div className="px-3 mb-2 text-[10px] font-bold text-zinc-400 uppercase tracking-widest">{copy.shell.social}</div>}
               <div className="space-y-1">
-                  <button onClick={() => setView('friends')} className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all ${currentView === 'friends' ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100' : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 hover:text-zinc-900 dark:hover:text-zinc-100'}`}><IconUser />{!isSidebarCollapsed && <span>Friends</span>}</button>
-                  <button onClick={() => setView('team')} className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all ${currentView === 'team' ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100' : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 hover:text-zinc-900 dark:hover:text-zinc-100'}`}><IconUsers />{!isSidebarCollapsed && <span>Team</span>}</button>
+                  <button onClick={() => setView('friends')} className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all ${currentView === 'friends' ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100' : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 hover:text-zinc-900 dark:hover:text-zinc-100'}`}><IconUser />{!isSidebarCollapsed && <span>{copy.shell.friends}</span>}</button>
+                  <button onClick={() => setView('team')} className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all ${currentView === 'team' ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100' : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 hover:text-zinc-900 dark:hover:text-zinc-100'}`}><IconUsers />{!isSidebarCollapsed && <span>{copy.shell.team}</span>}</button>
               </div>
           </div>
         </nav>
@@ -2551,14 +2647,14 @@ export default function App() {
                   <button
                       onClick={toggleTheme}
                       className="p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
-                      title={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
+                      title={theme === 'light' ? copy.shell.switchToDark : copy.shell.switchToLight}
                   >
                       {theme === 'light' ? <IconMoon className="w-4 h-4"/> : <IconSun className="w-4 h-4"/>}
                   </button>
                   <button
                       onClick={handleLogoutClick}
                       className="p-2 rounded-lg text-zinc-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-300 transition-colors"
-                      title="Sign out"
+                      title={copy.shell.signOutTitle}
                   >
                       <IconLogOut className="w-4 h-4" />
                   </button>
